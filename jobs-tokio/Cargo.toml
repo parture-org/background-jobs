@@ -1,0 +1,20 @@
+[package]
+name = "jobs-tokio"
+version = "0.1.0"
+authors = ["asonix <asonix@asonix.dog>"]
+edition = "2018"
+
+[dependencies]
+futures = "0.1"
+lmdb = "0.8"
+log = "0.4"
+tokio = "0.1"
+tokio-threadpool = "0.1"
+
+[dependencies.jobs-core]
+version = "0.1"
+path = "../jobs-core"
+
+[dependencies.kv]
+version = "0.6"
+features = ["bincode-value"]
