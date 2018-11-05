@@ -166,7 +166,7 @@ impl Storage {
             &bucket,
             &id.to_string(),
             Bincode::to_value_buf(self.runner_id)?,
-        );
+        )?;
         txn.commit()?;
 
         Ok(())
