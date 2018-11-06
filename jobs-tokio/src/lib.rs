@@ -1,19 +1,22 @@
 #[macro_use]
 extern crate log;
 
-mod storage;
-
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::{Duration, Instant},
+};
 
 use futures::{
-    future::poll_fn,
+    future::{poll_fn, Either, IntoFuture},
     sync::mpsc::{channel, Receiver, SendError, Sender},
     Future, Sink, Stream,
 };
-use jobs_core::{JobInfo, Processor, Processors};
+use jobs_core::{
+    storage::{JobStatus, Storage},
+    JobInfo, Processor, Processors,
+};
+use tokio::timer::Interval;
 use tokio_threadpool::blocking;
-
-use crate::storage::Storage;
 
 pub struct ProcessorHandle {
     spawner: Sender<JobInfo>,
@@ -28,7 +31,7 @@ impl ProcessorHandle {
     }
 }
 
-fn setup_kv(db_path: PathBuf) -> impl Future<Item = Storage, Error = ()> {
+fn setup_kv(runner_id: usize, db_path: PathBuf) -> impl Future<Item = Storage, Error = ()> {
     tokio::fs::create_dir_all(db_path.clone())
         .map_err(|e| error!("Failed to create db directory: {}", e))
         .and_then(move |_| {
@@ -36,7 +39,8 @@ fn setup_kv(db_path: PathBuf) -> impl Future<Item = Storage, Error = ()> {
                 let path = db_path.clone();
 
                 blocking(move || {
-                    Storage::init(0, path).map_err(|e| error!("Error initializing db, {}", e))
+                    Storage::init(runner_id, path)
+                        .map_err(|e| error!("Error initializing db, {}", e))
                 })
                 .map_err(|e| error!("Error in blocking, {}", e))
             })
@@ -44,15 +48,117 @@ fn setup_kv(db_path: PathBuf) -> impl Future<Item = Storage, Error = ()> {
         .and_then(|res| res)
 }
 
+enum ProcessorMessage {
+    Job(JobInfo),
+    Time(Instant),
+    Stop,
+}
+
+fn return_job(
+    storage: Storage,
+    processor_count: usize,
+    processors: Processors,
+    job: JobInfo,
+) -> impl Future<Item = (Processors, usize), Error = ()> {
+    poll_fn(move || {
+        let storage = storage.clone();
+        let job = job.clone();
+
+        blocking(move || {
+            storage
+                .store_job(job, JobStatus::Finished)
+                .map_err(|e| error!("Error finishing job, {}", e))
+        })
+        .map_err(|e| error!("Error blocking, {}", e))
+    })
+    .and_then(|res| res)
+    .map(move |_| (processors, processor_count + 1))
+}
+
+fn try_process_job(
+    storage: Storage,
+    processor_count: usize,
+    processors: Processors,
+    tx: Sender<ProcessorMessage>,
+) -> impl Future<Item = (Processors, usize), Error = ()> {
+    if processor_count > 0 {
+        let fut = poll_fn(move || {
+            let storage = storage.clone();
+
+            blocking(move || {
+                storage
+                    .dequeue_job()
+                    .map_err(|e| error!("Error dequeuing job, {}", e))
+            })
+            .map_err(|e| error!("Error blocking, {}", e))
+        })
+        .and_then(|res| res)
+        .then(move |res| match res {
+            Ok(maybe_job) => {
+                if let Some(job) = maybe_job {
+                    // TODO: return JobInfo to DB with job status
+                    tokio::spawn(processors.process_job(job).and_then(move |job| {
+                        tx.send(ProcessorMessage::Job(job))
+                            .map(|_| ())
+                            .map_err(|e| error!("Error returning job, {}", e))
+                    }));
+                    Ok((processors, processor_count - 1))
+                } else {
+                    Ok((processors, processor_count))
+                }
+            }
+            Err(_) => Ok((processors, processor_count)),
+        });
+
+        Either::A(fut)
+    } else {
+        Either::B(Ok((processors, processor_count)).into_future())
+    }
+}
+
+fn process_jobs(
+    storage: Storage,
+    num_processors: usize,
+    processors: Processors,
+    tx: Sender<ProcessorMessage>,
+    rx: Receiver<ProcessorMessage>,
+) -> impl Future<Item = (), Error = ()> {
+    Interval::new(Instant::now(), Duration::from_millis(500))
+        .map(ProcessorMessage::Time)
+        .map_err(|e| error!("Error in timer, {}", e))
+        .select(rx)
+        .fold(
+            (processors, num_processors),
+            move |(processors, processor_count), msg| match msg {
+                ProcessorMessage::Job(job) => Either::A(return_job(
+                    storage.clone(),
+                    processor_count,
+                    processors,
+                    job,
+                )),
+                ProcessorMessage::Time(_) => Either::B(Either::A(try_process_job(
+                    storage.clone(),
+                    processor_count,
+                    processors,
+                    tx.clone(),
+                ))),
+                ProcessorMessage::Stop => Either::B(Either::B(Err(()).into_future())),
+            },
+        )
+        .map(|_| ())
+}
+
 pub struct JobRunner {
     processors: Processors,
     receiver: Receiver<JobInfo>,
     sender: Sender<JobInfo>,
     db_path: PathBuf,
+    num_processors: usize,
+    runner_id: usize,
 }
 
 impl JobRunner {
-    pub fn new<P: AsRef<Path>>(db_path: P) -> Self {
+    pub fn new<P: AsRef<Path>>(runner_id: usize, num_processors: usize, db_path: P) -> Self {
         let (tx, rx) = channel::<JobInfo>(100);
 
         JobRunner {
@@ -60,6 +166,8 @@ impl JobRunner {
             receiver: rx,
             sender: tx,
             db_path: db_path.as_ref().to_owned(),
+            num_processors,
+            runner_id,
         }
     }
 
@@ -74,22 +182,45 @@ impl JobRunner {
         let JobRunner {
             processors,
             receiver,
-            sender,
+            sender: _,
             db_path,
+            num_processors,
+            runner_id,
         } = self;
 
-        let _ = sender;
-        let _ = db_path;
+        let (tx, rx) = channel::<ProcessorMessage>(100);
+        let tx2 = tx.clone();
 
-        // tokio::spawn(setup_kv(db_path));
+        setup_kv(runner_id, db_path)
+            .and_then(move |storage| {
+                tokio::spawn(process_jobs(
+                    storage.clone(),
+                    num_processors,
+                    processors,
+                    tx,
+                    rx,
+                ));
 
-        receiver
-            .fold(processors, |mut processors, job| {
-                processors.queue(job);
-
-                Box::new(processors.turn())
+                receiver.fold(storage, |storage, job| {
+                    poll_fn(move || {
+                        let job = job.clone();
+                        let storage = storage.clone();
+                        blocking(|| {
+                            storage
+                                .store_job(job, JobStatus::Pending)
+                                .map_err(|e| error!("Error storing job, {}", e))
+                                .map(|_| storage)
+                        })
+                        .map_err(|e| error!("Error blocking, {}", e))
+                    })
+                    .and_then(|res| res)
+                })
             })
-            .map(|_| ())
+            .and_then(|_| {
+                tx2.send(ProcessorMessage::Stop)
+                    .map(|_| ())
+                    .map_err(|e| error!("Error shutting down processor, {}", e))
+            })
     }
 
     pub fn spawn(self) -> ProcessorHandle {

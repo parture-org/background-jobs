@@ -5,12 +5,14 @@ extern crate log;
 #[macro_use]
 extern crate serde_derive;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use failure::Error;
 use futures::future::{Either, Future, IntoFuture};
 use serde::{de::DeserializeOwned, ser::Serialize};
 use serde_json::Value;
+
+pub mod storage;
 
 #[derive(Debug, Fail)]
 pub enum JobError {
@@ -92,6 +94,7 @@ pub trait Processor {
             status: JobStatus::Pending,
             args: serde_json::to_value(args)?,
             retry_count: max_retries.unwrap_or(Self::max_retries()),
+            requeued_at: None,
         };
 
         Ok(job)
@@ -136,13 +139,13 @@ pub enum MaxRetries {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum ShouldStop {
+pub enum ShouldStop {
     LimitReached,
     Requeue,
 }
 
 impl ShouldStop {
-    fn should_requeue(&self) -> bool {
+    pub fn should_requeue(&self) -> bool {
         *self == ShouldStop::Requeue
     }
 }
@@ -164,7 +167,7 @@ impl MaxRetries {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct JobInfo {
     /// ID of the job, None means an ID has not been set
     id: Option<usize>,
@@ -180,10 +183,13 @@ pub struct JobInfo {
 
     /// Retries left for this job, None means no limit
     retry_count: MaxRetries,
+
+    /// The time this job was re-queued
+    requeued_at: Option<usize>,
 }
 
 impl JobInfo {
-    fn decrement(&mut self) -> ShouldStop {
+    pub fn decrement(&mut self) -> ShouldStop {
         self.retry_count.decrement()
     }
 
@@ -198,35 +204,11 @@ impl JobInfo {
     }
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct Jobs {
-    inner: VecDeque<JobInfo>,
-}
-
-impl Jobs {
-    fn queue(&mut self, job: JobInfo) {
-        self.inner.push_back(job);
-    }
-
-    fn pop(&mut self) -> Option<JobInfo> {
-        self.inner.pop_front()
-    }
-}
-
-impl Default for Jobs {
-    fn default() -> Self {
-        Jobs {
-            inner: Default::default(),
-        }
-    }
-}
-
 pub type ProcessFn =
     Box<dyn Fn(Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send>;
 
 pub struct Processors {
     inner: HashMap<String, ProcessFn>,
-    jobs: Jobs,
 }
 
 impl Processors {
@@ -244,27 +226,18 @@ impl Processors {
         );
     }
 
-    pub fn queue(&mut self, job: JobInfo) {
-        self.jobs.queue(job);
-    }
+    pub fn process_job(&self, job: JobInfo) -> impl Future<Item = JobInfo, Error = ()> {
+        let opt = self
+            .inner
+            .get(&job.processor)
+            .map(|processor| process(processor, job.clone()));
 
-    pub fn turn(mut self) -> impl Future<Item = Self, Error = ()> {
-        match self.jobs.pop() {
-            Some(job) => Either::A(self.process_job(job)),
-            None => Either::B(Ok(self).into_future()),
+        if let Some(fut) = opt {
+            Either::A(fut)
+        } else {
+            error!("Processor {} not present", job.processor);
+            Either::B(Ok(job).into_future())
         }
-    }
-
-    fn process_job(mut self, job: JobInfo) -> impl Future<Item = Self, Error = ()> {
-        let processor = self.inner.remove(&job.processor);
-
-        processor
-            .ok_or_else(|| {
-                error!("No processor");
-                ()
-            })
-            .into_future()
-            .and_then(move |processor| process(self, processor, job))
     }
 }
 
@@ -272,39 +245,23 @@ impl Default for Processors {
     fn default() -> Self {
         Processors {
             inner: Default::default(),
-            jobs: Default::default(),
         }
     }
 }
 
-fn process(
-    mut processors: Processors,
-    process_fn: ProcessFn,
-    mut job: JobInfo,
-) -> impl Future<Item = Processors, Error = ()> {
+fn process(process_fn: &ProcessFn, job: JobInfo) -> impl Future<Item = JobInfo, Error = ()> {
     let args = job.args.clone();
 
     let processor = job.processor.clone();
 
-    let fut = process_fn(args).then(move |res| match res {
-        Ok(_) => Ok(info!("Job completed, {}", processor)),
+    process_fn(args).then(move |res| match res {
+        Ok(_) => {
+            info!("Job completed, {}", processor);
+            Ok(job)
+        }
         Err(e) => {
             error!("Job errored, {}, {}", processor, e);
-            Err(e)
+            Ok(job)
         }
-    });
-
-    processors.inner.insert(job.processor.clone(), process_fn);
-
-    fut.then(|res| {
-        if let Err(e) = res {
-            if job.decrement().should_requeue() {
-                processors.jobs.queue(job);
-            } else {
-                error!("Job failed permanently, {}, {}", &job.processor, e);
-            }
-        }
-
-        Ok(processors)
     })
 }

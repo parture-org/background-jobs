@@ -6,7 +6,6 @@ edition = "2018"
 
 [dependencies]
 futures = "0.1"
-lmdb = "0.8"
 log = "0.4"
 tokio = "0.1"
 tokio-threadpool = "0.1"
