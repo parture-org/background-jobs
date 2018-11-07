@@ -9,6 +9,7 @@ members = [
     "jobs-core",
     "jobs-executor",
     "jobs-tokio",
+    "examples/process-jobs",
 ]
 
 [features]

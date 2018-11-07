@@ -11,10 +11,7 @@ use futures::{
     sync::mpsc::{channel, Receiver, SendError, Sender},
     Future, Sink, Stream,
 };
-use jobs_core::{
-    storage::{JobStatus, Storage},
-    JobInfo, Processor, Processors,
-};
+use jobs_core::{storage::Storage, JobInfo, Processor, Processors};
 use tokio::timer::Interval;
 use tokio_threadpool::blocking;
 
@@ -66,7 +63,7 @@ fn return_job(
 
         blocking(move || {
             storage
-                .store_job(job, JobStatus::Finished)
+                .store_job(job)
                 .map_err(|e| error!("Error finishing job, {}", e))
         })
         .map_err(|e| error!("Error blocking, {}", e))
@@ -87,26 +84,26 @@ fn try_process_job(
 
             blocking(move || {
                 storage
-                    .dequeue_job()
+                    .dequeue_job(processor_count)
                     .map_err(|e| error!("Error dequeuing job, {}", e))
             })
             .map_err(|e| error!("Error blocking, {}", e))
         })
         .and_then(|res| res)
         .then(move |res| match res {
-            Ok(maybe_job) => {
-                if let Some(job) = maybe_job {
-                    // TODO: return JobInfo to DB with job status
-                    tokio::spawn(processors.process_job(job).and_then(move |job| {
+            Ok(jobs) => Ok(jobs.into_iter().fold(
+                (processors, processor_count),
+                move |(proc, count), job| {
+                    let tx = tx.clone();
+                    tokio::spawn(proc.process_job(job).and_then(move |job| {
                         tx.send(ProcessorMessage::Job(job))
                             .map(|_| ())
                             .map_err(|e| error!("Error returning job, {}", e))
                     }));
-                    Ok((processors, processor_count - 1))
-                } else {
-                    Ok((processors, processor_count))
-                }
-            }
+
+                    (proc, count - 1)
+                },
+            )),
             Err(_) => Ok((processors, processor_count)),
         });
 
@@ -123,7 +120,7 @@ fn process_jobs(
     tx: Sender<ProcessorMessage>,
     rx: Receiver<ProcessorMessage>,
 ) -> impl Future<Item = (), Error = ()> {
-    Interval::new(Instant::now(), Duration::from_millis(500))
+    Interval::new(tokio::clock::now(), Duration::from_millis(500))
         .map(ProcessorMessage::Time)
         .map_err(|e| error!("Error in timer, {}", e))
         .select(rx)
@@ -142,10 +139,14 @@ fn process_jobs(
                     processors,
                     tx.clone(),
                 ))),
-                ProcessorMessage::Stop => Either::B(Either::B(Err(()).into_future())),
+                ProcessorMessage::Stop => {
+                    info!("Got stop message");
+                    Either::B(Either::B(Err(()).into_future()))
+                }
             },
         )
-        .map(|_| ())
+        .map(|_| info!("Terminating processor"))
+        .map_err(|_| info!("Terminating processor"))
 }
 
 pub struct JobRunner {
@@ -178,6 +179,14 @@ impl JobRunner {
         self.processors.register_processor(processor);
     }
 
+    pub fn spawn(self) -> ProcessorHandle {
+        let spawner = self.sender.clone();
+
+        tokio::spawn(self.runner());
+
+        ProcessorHandle { spawner }
+    }
+
     fn runner(self) -> impl Future<Item = (), Error = ()> {
         let JobRunner {
             processors,
@@ -207,7 +216,7 @@ impl JobRunner {
                         let storage = storage.clone();
                         blocking(|| {
                             storage
-                                .store_job(job, JobStatus::Pending)
+                                .store_job(job)
                                 .map_err(|e| error!("Error storing job, {}", e))
                                 .map(|_| storage)
                         })
@@ -218,17 +227,9 @@ impl JobRunner {
             })
             .and_then(|_| {
                 tx2.send(ProcessorMessage::Stop)
-                    .map(|_| ())
+                    .map(|_| info!("Sent stop message"))
                     .map_err(|e| error!("Error shutting down processor, {}", e))
             })
-    }
-
-    pub fn spawn(self) -> ProcessorHandle {
-        let spawner = self.sender.clone();
-
-        tokio::spawn(self.runner());
-
-        ProcessorHandle { spawner }
     }
 }
 

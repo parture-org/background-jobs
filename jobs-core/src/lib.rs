@@ -26,7 +26,7 @@ pub enum JobError {
 
 /// The Processor trait
 ///
-/// Processors are
+/// Processors define the logic for executing jobs
 pub trait Processor {
     type Arguments: Serialize + DeserializeOwned;
 
@@ -113,10 +113,19 @@ pub trait Processor {
     }
 }
 
+/// Set the status of a job when storing it
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub enum JobStatus {
+    /// Job should be queued
     Pending,
-    Active,
+
+    /// Job is running
+    Running,
+
+    /// Job has failed
+    Failed,
+
+    /// Job has finished
     Finished,
 }
 
@@ -167,7 +176,7 @@ impl MaxRetries {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct JobInfo {
     /// ID of the job, None means an ID has not been set
     id: Option<usize>,
@@ -201,6 +210,14 @@ impl JobInfo {
         if self.id.is_none() {
             self.id = Some(id);
         }
+    }
+
+    fn fail(&mut self) {
+        self.status = JobStatus::Failed;
+    }
+
+    fn pass(&mut self) {
+        self.status = JobStatus::Finished;
     }
 }
 
@@ -249,7 +266,7 @@ impl Default for Processors {
     }
 }
 
-fn process(process_fn: &ProcessFn, job: JobInfo) -> impl Future<Item = JobInfo, Error = ()> {
+fn process(process_fn: &ProcessFn, mut job: JobInfo) -> impl Future<Item = JobInfo, Error = ()> {
     let args = job.args.clone();
 
     let processor = job.processor.clone();
@@ -257,10 +274,12 @@ fn process(process_fn: &ProcessFn, job: JobInfo) -> impl Future<Item = JobInfo, 
     process_fn(args).then(move |res| match res {
         Ok(_) => {
             info!("Job completed, {}", processor);
+            job.pass();
             Ok(job)
         }
         Err(e) => {
             error!("Job errored, {}, {}", processor, e);
+            job.fail();
             Ok(job)
         }
     })
