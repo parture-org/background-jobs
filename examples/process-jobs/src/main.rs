@@ -6,7 +6,7 @@ use futures::{
     future::{lazy, IntoFuture},
     Future,
 };
-use jobs::{JobRunner, MaxRetries, Processor};
+use jobs::{Backoff, JobRunner, MaxRetries, Processor};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct MyJobArguments {
@@ -25,6 +25,10 @@ impl Processor for MyProcessor {
 
     fn max_retries() -> MaxRetries {
         MaxRetries::Count(1)
+    }
+
+    fn backoff_strategy() -> Backoff {
+        Backoff::Exponential(2)
     }
 
     fn process(&self, args: Self::Arguments) -> Box<dyn Future<Item = (), Error = Error> + Send> {
@@ -68,7 +72,7 @@ fn main() {
             .map(|job| {
                 tokio::spawn(
                     handle
-                        .queue(MyProcessor::new_job(job, None).unwrap())
+                        .queue(MyProcessor::new_job(job, None, None).unwrap())
                         .then(|_| Ok(())),
                 );
             })
