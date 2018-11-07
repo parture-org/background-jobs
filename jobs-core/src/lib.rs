@@ -168,7 +168,7 @@ impl MaxRetries {
         match *self {
             MaxRetries::Infinite => ShouldStop::Requeue,
             MaxRetries::Count(ref count) => {
-                if (retry_count as usize) < *count {
+                if (retry_count as usize) <= *count {
                     ShouldStop::Requeue
                 } else {
                     ShouldStop::LimitReached
