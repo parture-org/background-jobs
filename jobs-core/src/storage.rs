@@ -3,9 +3,11 @@ use std::{
     sync::{Arc, RwLock, RwLockWriteGuard},
 };
 
-use crate::{JobInfo, JobStatus};
+use chrono::offset::Utc;
 use kv::{json::Json, Bucket, Config, CursorOp, Error, Manager, Serde, Store, Txn, ValueBuf};
 use lmdb::Error as LmdbError;
+
+use crate::{JobInfo, JobStatus};
 
 struct Buckets<'a> {
     queued: Bucket<'a, &'a [u8], ValueBuf<Json<usize>>>,
@@ -120,6 +122,8 @@ impl Storage {
                 let initial_value =
                     Ok((inner_txn, Vec::new())) as Result<(&mut Txn, Vec<JobInfo>), Error>;
 
+                let now = Utc::now();
+
                 trace!("Got lock");
                 let (_inner_txn, vec) =
                     cursor
@@ -127,15 +131,17 @@ impl Storage {
                         .fold(initial_value, |acc, (key, _)| match acc {
                             Ok((inner_txn, mut jobs)) => {
                                 if jobs.len() < limit {
-                                    self.run_job(
-                                        &buckets,
-                                        inner_txn,
-                                        std::str::from_utf8(key).unwrap().parse().unwrap(),
-                                    )?;
-
                                     let job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
 
-                                    jobs.push(job);
+                                    if job.is_ready(now) {
+                                        self.run_job(
+                                            &buckets,
+                                            inner_txn,
+                                            std::str::from_utf8(key).unwrap().parse().unwrap(),
+                                        )?;
+
+                                        jobs.push(job);
+                                    }
                                 }
 
                                 Ok((inner_txn, jobs))
@@ -167,9 +173,10 @@ impl Storage {
 
         trace!("Generaged job id, {}", job_id);
 
-        if let JobStatus::Failed = job.status.clone() {
-            if job.decrement().should_requeue() {
-                job.status = JobStatus::Pending;
+        if job.is_failed() {
+            if job.increment().should_requeue() {
+                job.pending();
+                job.next_queue();
             }
         }
 

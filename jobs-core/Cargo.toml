@@ -5,10 +5,11 @@ authors = ["asonix <asonix@asonix.dog>"]
 edition = "2018"
 
 [dependencies]
+chrono = { version = "0.4", features = ["serde"] }
 failure = "0.1"
 futures = "0.1.21"
 log = "0.4"
-kv = { version = "0.6", path = "../../rust-kv", features = ["json-value"] }
+kv = { version = "0.6", features = ["json-value"] }
 lmdb = "0.8"
 serde = "1.0"
 serde_derive = "1.0"

@@ -7,6 +7,7 @@ extern crate serde_derive;
 
 use std::collections::HashMap;
 
+use chrono::{offset::Utc, DateTime, Duration as OldDuration};
 use failure::Error;
 use futures::future::{Either, Future, IntoFuture};
 use serde::{de::DeserializeOwned, ser::Serialize};
@@ -40,6 +41,11 @@ pub trait Processor {
     /// Jobs can override
     fn max_retries() -> MaxRetries;
 
+    /// Define the default backoff strategy for a given processor
+    ///
+    /// Jobs can override
+    fn backoff_strategy() -> Backoff;
+
     /// Defines how jobs for this processor are processed
     ///
     /// Please do not perform blocking operations in the process method except if put behind
@@ -71,6 +77,10 @@ pub trait Processor {
     ///         MaxRetries::Count(1)
     ///     }
     ///
+    ///     fn backoff_strategy() -> Backoff {
+    ///         Backoff::Exponential(2)
+    ///     }
+    ///
     ///     fn process(
     ///         &self,
     ///         args: Self::Arguments,
@@ -87,14 +97,20 @@ pub trait Processor {
     ///     Ok(())
     /// }
     /// ```
-    fn new_job(args: Self::Arguments, max_retries: Option<MaxRetries>) -> Result<JobInfo, Error> {
+    fn new_job(
+        args: Self::Arguments,
+        max_retries: Option<MaxRetries>,
+        backoff_strategy: Option<Backoff>,
+    ) -> Result<JobInfo, Error> {
         let job = JobInfo {
             id: None,
             processor: Self::name().to_owned(),
             status: JobStatus::Pending,
             args: serde_json::to_value(args)?,
-            retry_count: max_retries.unwrap_or(Self::max_retries()),
-            requeued_at: None,
+            retry_count: 0,
+            max_retries: max_retries.unwrap_or(Self::max_retries()),
+            next_queue: None,
+            backoff_strategy: backoff_strategy.unwrap_or(Self::backoff_strategy()),
         };
 
         Ok(job)
@@ -147,6 +163,21 @@ pub enum MaxRetries {
     Count(usize),
 }
 
+impl MaxRetries {
+    fn compare(&self, retry_count: u32) -> ShouldStop {
+        match *self {
+            MaxRetries::Infinite => ShouldStop::Requeue,
+            MaxRetries::Count(ref count) => {
+                if (retry_count as usize) < *count {
+                    ShouldStop::Requeue
+                } else {
+                    ShouldStop::LimitReached
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ShouldStop {
     LimitReached,
@@ -156,23 +187,6 @@ pub enum ShouldStop {
 impl ShouldStop {
     pub fn should_requeue(&self) -> bool {
         *self == ShouldStop::Requeue
-    }
-}
-
-impl MaxRetries {
-    fn decrement(&mut self) -> ShouldStop {
-        match *self {
-            MaxRetries::Infinite => ShouldStop::Requeue,
-            MaxRetries::Count(ref mut count) => {
-                *count = *count - 1;
-
-                if *count == 0 {
-                    ShouldStop::LimitReached
-                } else {
-                    ShouldStop::Requeue
-                }
-            }
-        }
     }
 }
 
@@ -191,25 +205,61 @@ pub struct JobInfo {
     status: JobStatus,
 
     /// Retries left for this job, None means no limit
-    retry_count: MaxRetries,
+    retry_count: u32,
+
+    /// the initial MaxRetries value, for comparing to the current retry count
+    max_retries: MaxRetries,
+
+    /// How often retries should be scheduled
+    backoff_strategy: Backoff,
 
     /// The time this job was re-queued
-    requeued_at: Option<usize>,
+    next_queue: Option<DateTime<Utc>>,
 }
 
 impl JobInfo {
-    pub fn decrement(&mut self) -> ShouldStop {
-        self.retry_count.decrement()
-    }
-
-    pub fn id(&self) -> Option<usize> {
+    fn id(&self) -> Option<usize> {
         self.id.clone()
     }
 
-    pub fn set_id(&mut self, id: usize) {
+    fn set_id(&mut self, id: usize) {
         if self.id.is_none() {
             self.id = Some(id);
         }
+    }
+
+    fn increment(&mut self) -> ShouldStop {
+        self.retry_count += 1;
+        self.max_retries.compare(self.retry_count)
+    }
+
+    fn next_queue(&mut self) {
+        let now = Utc::now();
+
+        let next_queue = match self.backoff_strategy {
+            Backoff::Linear(secs) => now + OldDuration::seconds(secs as i64),
+            Backoff::Exponential(base) => {
+                let secs = base.pow(self.retry_count);
+                now + OldDuration::seconds(secs as i64)
+            }
+        };
+
+        self.next_queue = Some(next_queue);
+    }
+
+    fn is_ready(&self, now: DateTime<Utc>) -> bool {
+        match self.next_queue {
+            Some(ref time) => now > *time,
+            None => true,
+        }
+    }
+
+    fn is_failed(&self) -> bool {
+        self.status == JobStatus::Failed
+    }
+
+    fn pending(&mut self) {
+        self.status = JobStatus::Pending;
     }
 
     fn fail(&mut self) {
