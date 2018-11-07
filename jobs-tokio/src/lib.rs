@@ -127,12 +127,22 @@ fn process_jobs(
         .fold(
             (processors, num_processors),
             move |(processors, processor_count), msg| match msg {
-                ProcessorMessage::Job(job) => Either::A(return_job(
-                    storage.clone(),
-                    processor_count,
-                    processors,
-                    job,
-                )),
+                ProcessorMessage::Job(job) => {
+                    let tx = tx.clone();
+
+                    Either::A(
+                        return_job(storage.clone(), processor_count, processors, job).map(
+                            move |values| {
+                                tokio::spawn(
+                                    tx.send(ProcessorMessage::Time(tokio::clock::now()))
+                                        .map(|_| ())
+                                        .map_err(|_| ()),
+                                );
+                                values
+                            },
+                        ),
+                    )
+                }
                 ProcessorMessage::Time(_) => Either::B(Either::A(try_process_job(
                     storage.clone(),
                     processor_count,
