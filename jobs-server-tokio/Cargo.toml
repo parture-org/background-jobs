@@ -1,14 +1,20 @@
 [package]
-name = "jobs-tokio"
+name = "jobs-server-tokio"
 version = "0.1.0"
 authors = ["asonix <asonix@asonix.dog>"]
 edition = "2018"
 
 [dependencies]
+failure = "0.1"
 futures = "0.1"
 log = "0.4"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
 tokio = "0.1"
 tokio-threadpool = "0.1"
+tokio-zmq = "0.5"
+zmq = "0.8"
 
 [dependencies.jobs-core]
 version = "0.1"
