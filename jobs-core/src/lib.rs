@@ -28,7 +28,7 @@ pub enum JobError {
 /// The Processor trait
 ///
 /// Processors define the logic for executing jobs
-pub trait Processor {
+pub trait Processor: Clone {
     type Arguments: Serialize + DeserializeOwned;
 
     /// The name of the processor

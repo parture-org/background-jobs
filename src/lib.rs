@@ -5,3 +5,6 @@ pub use jobs_core::{
 
 #[cfg(feature = "jobs-tokio")]
 pub use jobs_tokio::{JobRunner, ProcessorHandle};
+
+#[cfg(feature = "jobs-actix")]
+pub use jobs_actix::{JobsActor, JobsBuilder, QueueJob};

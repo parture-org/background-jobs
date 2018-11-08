@@ -1,0 +1,15 @@
+[package]
+name = "jobs-actix"
+version = "0.1.0"
+authors = ["asonix <asonix@asonix.dog>"]
+edition = "2018"
+
+[dependencies]
+actix = "0.7"
+failure = "0.1"
+futures = "0.1"
+log = "0.4"
+
+[dependencies.jobs-core]
+version = "0.1"
+path = "../jobs-core"

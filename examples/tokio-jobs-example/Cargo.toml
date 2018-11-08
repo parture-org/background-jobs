@@ -1,5 +1,5 @@
 [package]
-name = "process-jobs"
+name = "tokio-jobs-example"
 version = "0.1.0"
 authors = ["asonix <asonix@asonix.dog>"]
 edition = "2018"
@@ -17,4 +17,5 @@ tokio = "0.1"
 [dependencies.jobs]
 version = "0.1"
 path = "../.."
+default-features = false
 features = ["jobs-tokio"]

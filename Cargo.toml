@@ -6,22 +6,23 @@ edition = "2018"
 
 [workspace]
 members = [
+    "jobs-actix",
     "jobs-core",
-    "jobs-executor",
     "jobs-tokio",
-    "examples/process-jobs",
+    "examples/tokio-jobs-example",
+    "examples/actix-jobs-example",
 ]
 
 [features]
-default = ["jobs-tokio"]
+default = ["jobs-tokio", "jobs-actix"]
 
 [dependencies.jobs-core]
 version = "0.1"
 path = "jobs-core"
 
-[dependencies.jobs-executor]
+[dependencies.jobs-actix]
 version = "0.1"
-path = "jobs-executor"
+path = "jobs-actix"
 optional = true
 
 [dependencies.jobs-tokio]
