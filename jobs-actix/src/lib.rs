@@ -15,7 +15,7 @@ use actix::{
 };
 use failure::Error;
 use futures::Future;
-use jobs_core::{storage::Storage, JobInfo, Processor, Processors};
+use jobs_core::{JobInfo, Processor, Processors, Storage};
 
 fn coerce<I, E, F>(res: Result<Result<I, E>, F>) -> Result<I, E>
 where

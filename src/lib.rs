@@ -1,6 +1,5 @@
 pub use jobs_core::{
-    storage::Storage, Backoff, JobError, JobInfo, JobStatus, MaxRetries, Processor, Processors,
-    ShouldStop,
+    Backoff, JobError, JobInfo, JobStatus, MaxRetries, Processor, Processors, ShouldStop, Storage,
 };
 
 #[cfg(feature = "jobs-tokio")]

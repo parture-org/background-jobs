@@ -11,7 +11,7 @@ use futures::{
     sync::mpsc::{channel, Receiver, SendError, Sender},
     Future, Sink, Stream,
 };
-use jobs_core::{storage::Storage, JobInfo, Processor, Processors};
+use jobs_core::{JobInfo, Processor, Processors, Storage};
 use tokio::timer::Interval;
 use tokio_threadpool::blocking;
 

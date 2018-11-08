@@ -176,7 +176,7 @@ impl Storage {
             }
         }
 
-        let status = job.status.clone();
+        let status = job.status();
         let job_value = Json::to_value_buf(job)?;
 
         trace!("Storing job");
