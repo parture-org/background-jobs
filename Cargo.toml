@@ -10,8 +10,9 @@ members = [
     "jobs-core",
     "jobs-server-tokio",
     "jobs-tokio",
-    "examples/tokio-jobs-example",
     "examples/actix-jobs-example",
+    "examples/server-jobs-example",
+    "examples/tokio-jobs-example",
 ]
 
 [features]

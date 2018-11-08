@@ -9,10 +9,12 @@ use failure::Error;
 
 mod client;
 mod server;
+mod spawner;
 
 pub use crate::{
     client::ClientConfig,
     server::{ServerConfig, ServerRequest, ServerResponse},
+    spawner::SpawnerConfig,
 };
 
 fn coerce<T, F>(res: Result<Result<T, Error>, F>) -> Result<T, Error>

@@ -44,6 +44,8 @@ impl Storage {
         let mut manager = Manager::new();
         let mut cfg = Config::default(path);
 
+        cfg.set_max_readers(18);
+
         // Create our buckets
         for bucket in Storage::buckets().iter() {
             cfg.bucket(bucket, None);
@@ -149,6 +151,8 @@ impl Storage {
             })?;
 
         trace!("Committing");
+
+        read_txn.commit()?;
 
         txn.commit()?;
 

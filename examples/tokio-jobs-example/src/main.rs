@@ -47,20 +47,20 @@ fn main() {
     dotenv::dotenv().ok();
     env_logger::init();
 
-    tokio::run(lazy(|| {
+    let (_, _, jobs) = (1..18).fold((0, 1, Vec::new()), |(x, y, mut acc), _| {
+        acc.push(MyJobArguments {
+            some_usize: x,
+            other_usize: y,
+        });
+
+        (y, x + y, acc)
+    });
+
+    tokio::run(lazy(move || {
         let mut runner = JobRunner::new(1234, 4, "example-db");
         runner.register_processor(MyProcessor);
 
         let handle = runner.spawn();
-
-        let (_, _, jobs) = (1..18).fold((0, 1, Vec::new()), |(x, y, mut acc), _| {
-            acc.push(MyJobArguments {
-                some_usize: x,
-                other_usize: y,
-            });
-
-            (y, x + y, acc)
-        });
 
         for job in jobs {
             tokio::spawn(

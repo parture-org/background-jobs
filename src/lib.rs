@@ -7,3 +7,6 @@ pub use jobs_tokio::{JobRunner, ProcessorHandle};
 
 #[cfg(feature = "jobs-actix")]
 pub use jobs_actix::{JobsActor, JobsBuilder, QueueJob};
+
+#[cfg(feature = "jobs-server-tokio")]
+pub use jobs_server_tokio::{ClientConfig, ServerConfig, SpawnerConfig};

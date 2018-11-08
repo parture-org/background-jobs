@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use failure::Error;
 use futures::{
@@ -6,6 +6,7 @@ use futures::{
     Future, Stream,
 };
 use jobs_core::{Processor, Processors};
+use tokio::timer::Delay;
 use tokio_zmq::{prelude::*, Multipart, Req};
 use zmq::{Context, Message};
 
@@ -133,11 +134,17 @@ fn process_response(
     response: ServerResponse,
     processors: &Processors,
 ) -> impl Future<Item = ServerRequest, Error = Error> {
+    let either_a = Either::A(
+        Delay::new(tokio::clock::now() + Duration::from_millis(500))
+            .from_err()
+            .and_then(|_| Ok(ServerRequest::FetchJobs(1))),
+    );
+
     match response {
         ServerResponse::FetchJobs(jobs) => {
             let job = match jobs.into_iter().next() {
                 Some(job) => job,
-                None => return Either::A(Ok(ServerRequest::FetchJobs(1)).into_future()),
+                None => return either_a,
             };
 
             let fut = processors
@@ -147,7 +154,10 @@ fn process_response(
 
             Either::B(fut)
         }
-        _ => return Either::A(Ok(ServerRequest::FetchJobs(1)).into_future()),
+        e => {
+            error!("Error from server, {:?}", e);
+            return either_a;
+        }
     }
 }
 
