@@ -2,20 +2,14 @@
 extern crate failure;
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate serde_derive;
 
 use failure::Error;
 
-mod client;
 mod server;
 mod spawner;
+mod worker;
 
-pub use crate::{
-    client::ClientConfig,
-    server::{ServerConfig, ServerRequest, ServerResponse},
-    spawner::SpawnerConfig,
-};
+pub use crate::{server::ServerConfig, spawner::SpawnerConfig, worker::WorkerConfig};
 
 fn coerce<T, F>(res: Result<Result<T, Error>, F>) -> Result<T, Error>
 where

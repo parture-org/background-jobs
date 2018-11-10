@@ -1,13 +1,13 @@
 use failure::Error;
-use jobs::ClientConfig;
+use jobs::WorkerConfig;
 use server_jobs_example::MyProcessor;
 
 fn main() -> Result<(), Error> {
-    let mut client = ClientConfig::init(16, "localhost", 5555)?;
+    let mut worker = WorkerConfig::init(16, "localhost", 5555, 5556)?;
 
-    client.register_processor(MyProcessor);
+    worker.register_processor(MyProcessor);
 
-    tokio::run(client.run());
+    tokio::run(worker.run());
 
     Ok(())
 }

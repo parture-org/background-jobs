@@ -9,7 +9,7 @@ fn main() {
         (y, x + y, acc)
     });
 
-    let spawner = SpawnerConfig::new("localhost", 5555);
+    let spawner = SpawnerConfig::new("localhost", 5556);
 
     tokio::run(lazy(move || {
         for job in jobs {

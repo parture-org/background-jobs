@@ -1,169 +1,192 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use failure::Error;
 use futures::{
     future::{lazy, poll_fn},
+    stream::iter_ok,
     Future, Stream,
 };
 use jobs_core::{JobInfo, Storage};
+use tokio::timer::Interval;
 use tokio_threadpool::blocking;
-use tokio_zmq::{prelude::*, Dealer, Multipart, Rep, Router};
+use tokio_zmq::{prelude::*, Multipart, Pull, Push};
 use zmq::{Context, Message};
 
 use crate::coerce;
 
-/// Messages from the client to the server
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum ServerRequest {
-    /// Request a number of jobs from the server
-    FetchJobs(usize),
-
-    /// Return a processed job to the server
-    ReturnJob(JobInfo),
+#[derive(Clone)]
+struct Config {
+    ip: String,
+    job_port: usize,
+    queue_port: usize,
+    runner_id: usize,
+    db_path: PathBuf,
+    context: Arc<Context>,
 }
 
-/// How the server responds to the client
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum ServerResponse {
-    /// Send a list of jobs to the client
-    FetchJobs(Vec<JobInfo>),
+impl Config {
+    fn create_server(&self) -> Result<ServerConfig, Error> {
+        let pusher = Push::builder(self.context.clone())
+            .bind(&format!("tcp://{}:{}", self.ip, self.job_port))
+            .build()?;
 
-    /// Send an OK to the client after a job is returned
-    JobReturned,
+        let puller = Pull::builder(self.context.clone())
+            .bind(&format!("tcp://{}:{}", self.ip, self.queue_port))
+            .build()?;
 
-    /// Could not parse the client's message
-    Unparsable,
+        let storage = Storage::init(self.runner_id, self.db_path.clone())?;
 
-    /// Server experienced error
-    InternalServerError,
+        let server = ServerConfig {
+            pusher,
+            puller,
+            storage,
+            config: self.clone(),
+        };
+
+        Ok(server)
+    }
 }
 
 pub struct ServerConfig {
-    servers: Vec<Rep>,
-    dealer: Dealer,
-    router: Router,
+    pusher: Push,
+    puller: Pull,
     storage: Storage,
+    // TODO: Recover from failure
+    #[allow(dead_code)]
+    config: Config,
 }
 
 impl ServerConfig {
     pub fn init<P: AsRef<Path>>(
         ip: &str,
-        port: usize,
+        job_port: usize,
+        queue_port: usize,
         runner_id: usize,
-        server_count: usize,
         db_path: P,
     ) -> Result<Self, Error> {
         let context = Arc::new(Context::new());
 
-        let inproc_name = "inproc://jobs-server-tokio";
+        Self::init_with_context(ip, job_port, queue_port, runner_id, db_path, context)
+    }
 
-        let dealer = Dealer::builder(context.clone()).bind(inproc_name).build()?;
-
-        let router = Router::builder(context.clone())
-            .bind(&format!("tcp://{}:{}", ip, port))
-            .build()?;
-
-        let mut servers = Vec::new();
-
-        for _ in 0..server_count {
-            servers.push(Rep::builder(context.clone()).connect(inproc_name).build()?);
-        }
-
-        let storage = Storage::init(runner_id, db_path.as_ref().to_owned())?;
-
-        let cfg = ServerConfig {
-            servers,
-            dealer,
-            router,
-            storage,
+    pub fn init_with_context<P: AsRef<Path>>(
+        ip: &str,
+        job_port: usize,
+        queue_port: usize,
+        runner_id: usize,
+        db_path: P,
+        context: Arc<Context>,
+    ) -> Result<Self, Error> {
+        let config = Config {
+            ip: ip.to_owned(),
+            job_port,
+            queue_port,
+            runner_id,
+            db_path: db_path.as_ref().to_owned(),
+            context,
         };
 
-        Ok(cfg)
+        config.create_server()
     }
 
     pub fn run(self) -> impl Future<Item = (), Error = ()> {
         lazy(|| {
             let ServerConfig {
-                servers,
-                dealer,
-                router,
+                pusher,
+                puller,
                 storage,
+                config: _,
             } = self;
 
-            for server in servers {
-                let (sink, stream) = server.sink_stream().split();
-                let storage = storage.clone();
+            let storage2 = storage.clone();
 
-                let fut = stream
-                    .from_err()
-                    .and_then(move |multipart| {
-                        let storage = storage.clone();
-                        let res = parse_multipart(multipart);
+            let fut = Interval::new(tokio::clock::now(), Duration::from_millis(250))
+                .from_err()
+                .and_then(move |_| dequeue_jobs(storage.clone()))
+                .flatten()
+                .fold(pusher, move |pusher, multipart| {
+                    Box::new(push_job(pusher, multipart))
+                });
 
-                        poll_fn(move || {
-                            let res = res.clone();
-                            let storage = storage.clone();
-                            blocking(move || wrap_request(res, storage))
-                        })
-                        .then(coerce)
-                    })
-                    .forward(sink);
+            tokio::spawn(
+                fut.map(|_| ())
+                    .map_err(move |e| error!("Error in server, {}", e)),
+            );
 
-                tokio::spawn(
-                    fut.map(|_| ())
-                        .map_err(|e| error!("Error in server, {}", e)),
-                );
-            }
-
-            let (deal_sink, deal_stream) = dealer.sink_stream().split();
-            let (rout_sink, rout_stream) = router.sink_stream().split();
-
-            deal_stream
-                .forward(rout_sink)
-                .join(rout_stream.forward(deal_sink))
-                .map_err(|e| error!("Error in broker, {}", e))
-                .map(|_| ())
+            puller
+                .stream()
+                .from_err()
+                .and_then(parse_job)
+                .and_then(move |job| store_job(job, storage2.clone()))
+                .or_else(|e| Ok(error!("Error storing job, {}", e)))
+                .for_each(|_| Ok(()))
         })
     }
 }
 
-fn wrap_request(
-    res: Result<ServerRequest, ServerResponse>,
+fn dequeue_jobs(
     storage: Storage,
-) -> Result<Multipart, Error> {
-    let res = res.map(move |msg| process_request(msg, storage));
-
-    let response = match res {
-        Ok(response) => response,
-        Err(response) => response,
-    };
-
-    Ok(Message::from_slice(serde_json::to_string(&response)?.as_ref())?.into())
+) -> impl Future<Item = impl Stream<Item = Multipart, Error = Error>, Error = Error> {
+    poll_fn(move || {
+        let storage = storage.clone();
+        blocking(move || wrap_fetch_queue(storage))
+    })
+    .then(coerce)
+    .map(|jobs| iter_ok(jobs))
+    .or_else(|e| {
+        error!("Error fetching jobs, {}", e);
+        Ok(iter_ok(vec![]))
+    })
 }
 
-fn parse_multipart(mut multipart: Multipart) -> Result<ServerRequest, ServerResponse> {
-    let unparsed_msg = match multipart.pop_front() {
-        Some(msg) => msg,
-        None => return Err(ServerResponse::Unparsable),
-    };
-
-    match serde_json::from_slice(&unparsed_msg) {
-        Ok(msg) => Ok(msg),
-        Err(_) => Err(ServerResponse::Unparsable),
-    }
+fn push_job(pusher: Push, message: Multipart) -> impl Future<Item = Push, Error = Error> {
+    pusher.send(message).map_err(Error::from)
 }
 
-fn process_request(request: ServerRequest, storage: Storage) -> ServerResponse {
-    match request {
-        ServerRequest::FetchJobs(limit) => storage
-            .dequeue_job(limit)
-            .map(ServerResponse::FetchJobs)
-            .map_err(|e| error!("Error fetching jobs, {}", e))
-            .unwrap_or(ServerResponse::InternalServerError),
-        ServerRequest::ReturnJob(job) => storage
-            .store_job(job)
-            .map(|_| ServerResponse::JobReturned)
-            .map_err(|e| error!("Error returning job, {}", e))
-            .unwrap_or(ServerResponse::InternalServerError),
-    }
+fn store_job(job: JobInfo, storage: Storage) -> impl Future<Item = (), Error = Error> {
+    let storage = storage.clone();
+
+    poll_fn(move || {
+        let job = job.clone();
+        let storage = storage.clone();
+
+        blocking(move || storage.store_job(job).map_err(Error::from)).map_err(Error::from)
+    })
+    .then(coerce)
 }
+
+fn wrap_fetch_queue(storage: Storage) -> Result<Vec<Multipart>, Error> {
+    let response = fetch_queue(storage)?;
+
+    let jobs = response
+        .into_iter()
+        .map(|job| {
+            serde_json::to_string(&job)
+                .map_err(Error::from)
+                .and_then(|json| Message::from_slice(json.as_ref()).map_err(Error::from))
+                .map(Multipart::from)
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+
+    Ok(jobs)
+}
+
+fn fetch_queue(storage: Storage) -> Result<Vec<JobInfo>, Error> {
+    storage.dequeue_job(100).map_err(Error::from)
+}
+
+fn parse_job(mut multipart: Multipart) -> Result<JobInfo, Error> {
+    let unparsed_msg = multipart.pop_front().ok_or(EmptyMessage)?;
+
+    let parsed = serde_json::from_slice(&unparsed_msg)?;
+
+    Ok(parsed)
+}
+
+#[derive(Clone, Debug, Fail)]
+#[fail(display = "Message was empty")]
+pub struct EmptyMessage;
