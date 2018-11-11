@@ -12,11 +12,11 @@ pub struct SpawnerConfig {
 }
 
 impl SpawnerConfig {
-    pub fn new(server_host: &str, queue_port: usize) -> Self {
+    pub fn new(server_host: &str, base_port: usize) -> Self {
         let ctx = Arc::new(Context::new());
 
         SpawnerConfig {
-            server: format!("tcp://{}:{}", server_host, queue_port),
+            server: format!("tcp://{}:{}", server_host, base_port),
             ctx,
         }
     }
@@ -31,12 +31,17 @@ impl SpawnerConfig {
             })
             .into_future();
 
+        debug!("Sending message to {}", self.server);
+
         Push::builder(self.ctx.clone())
             .connect(&self.server)
             .build()
             .into_future()
             .from_err()
             .join(msg)
-            .and_then(move |(req, msg)| req.send(msg).from_err().map(|_| ()))
+            .and_then(move |(push, msg)| {
+                trace!("Sending");
+                push.send(msg).from_err().map(|_| trace!("sent"))
+            })
     }
 }

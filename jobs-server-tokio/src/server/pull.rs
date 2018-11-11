@@ -44,8 +44,15 @@ impl PullConfig {
             .puller
             .stream()
             .from_err()
+            .map(|m| {
+                trace!("Handling new message");
+                m
+            })
             .and_then(parse_job)
-            .and_then(move |job| store_job(job, storage.clone()))
+            .and_then(move |job| {
+                trace!("Storing job, {:?}", job);
+                store_job(job, storage.clone())
+            })
             .for_each(|_| Ok(()))
             .map(|_| info!("Puller is shutting down"))
             .map_err(|e| {

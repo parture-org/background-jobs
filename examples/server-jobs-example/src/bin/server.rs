@@ -1,13 +1,18 @@
 use failure::Error;
 use jobs::ServerConfig;
+use server_jobs_example::queue_set;
 
 fn main() -> Result<(), Error> {
     dotenv::dotenv().ok();
     env_logger::init();
 
-    let config = ServerConfig::init("127.0.0.1", 5555, 5556, 1, "example-db")?;
-
-    tokio::run(config.run());
+    tokio::run(ServerConfig::init(
+        "127.0.0.1",
+        5555,
+        1,
+        queue_set(),
+        "example-db",
+    ));
 
     Ok(())
 }

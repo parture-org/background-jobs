@@ -1,15 +1,15 @@
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use failure::Error;
-use futures::{future::lazy, stream::iter_ok, Future, Stream};
+use futures::{future::lazy, Future, Stream};
 use tokio::timer::Delay;
-use tokio_zmq::{prelude::*, Multipart, Push};
+use tokio_zmq::{prelude::*, Multipart, Rep};
 use zmq::Message;
 
 use crate::server::Config;
 
 pub(crate) struct PortMapConfig {
-    pusher: Push,
+    rep: Rep,
     address: String,
     port_map: BTreeMap<String, usize>,
     config: Arc<Config>,
@@ -27,33 +27,33 @@ impl PortMapConfig {
             config,
         };
 
-        cfg.build()
-            .map_err(|e| error!("Error starting pusher, {}", e))
+        cfg.build().map_err(|e| error!("Error starting rep, {}", e))
     }
 
     fn run(self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let reset = self.reset();
 
         let PortMapConfig {
-            pusher,
+            rep,
             address: _,
             port_map,
             config: _,
         } = self;
 
-        let fut = iter_ok::<_, Error>(0..)
-            .and_then(move |count| {
-                trace!("Pushed {} portmaps", count);
+        let (sink, stream) = rep.sink_stream().split();
 
+        let fut = stream
+            .from_err::<Error>()
+            .and_then(move |_| {
                 let s = serde_json::to_string(&port_map)?;
                 let m = Message::from_slice(s.as_ref())?;
 
                 Ok(Multipart::from(m))
             })
-            .forward(pusher.sink())
-            .map(move |_| info!("portmap pusher shutting down"))
+            .forward(sink)
+            .map(move |_| info!("portmap rep shutting down"))
             .map_err(|e| {
-                error!("Error pushing portmap, {}", e);
+                error!("Error sending portmap, {}", e);
 
                 tokio::spawn(reset.rebuild());
             });
@@ -81,17 +81,17 @@ impl ResetPortMapConfig {
         Delay::new(tokio::clock::now() + Duration::from_secs(5))
             .from_err()
             .and_then(move |_| self.build())
-            .map_err(|e| error!("Error restarting pusher, {}", e))
+            .map_err(|e| error!("Error restarting rep, {}", e))
     }
 
     fn build(self) -> impl Future<Item = (), Error = Error> {
         lazy(|| {
-            let pusher = Push::builder(self.config.context.clone())
+            let rep = Rep::builder(self.config.context.clone())
                 .bind(&self.address)
                 .build()?;
 
             let config = PortMapConfig {
-                pusher,
+                rep,
                 address: self.address,
                 port_map: self.port_map,
                 config: self.config,

@@ -1,9 +1,12 @@
 use failure::Error;
 use jobs::WorkerConfig;
-use server_jobs_example::MyProcessor;
+use server_jobs_example::{queue_map, MyProcessor};
 
 fn main() -> Result<(), Error> {
-    let mut worker = WorkerConfig::init(16, "localhost", 5555, 5556)?;
+    dotenv::dotenv().ok();
+    env_logger::init();
+
+    let mut worker = WorkerConfig::new("localhost".to_owned(), 5555, queue_map());
 
     worker.register_processor(MyProcessor);
 

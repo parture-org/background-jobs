@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::{JobError, JobInfo, Processor};
 
 pub type ProcessFn =
-    Box<dyn Fn(Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send>;
+    Box<dyn Fn(Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send + Sync>;
 
 pub struct Processors {
     inner: HashMap<String, ProcessFn>,

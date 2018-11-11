@@ -1,9 +1,27 @@
 #[macro_use]
+extern crate log;
+#[macro_use]
 extern crate serde_derive;
+
+use std::collections::{BTreeMap, BTreeSet};
 
 use failure::Error;
 use futures::{future::IntoFuture, Future};
 use jobs::{Backoff, MaxRetries, Processor};
+
+pub fn queue_map() -> BTreeMap<String, usize> {
+    let mut map = BTreeMap::new();
+    map.insert("default".to_owned(), 18);
+
+    map
+}
+
+pub fn queue_set() -> BTreeSet<String> {
+    let mut set = BTreeSet::new();
+    set.insert("default".to_owned());
+
+    set
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MyJobArguments {
@@ -30,6 +48,10 @@ impl Processor for MyProcessor {
         "MyProcessor"
     }
 
+    fn queue() -> &'static str {
+        "default"
+    }
+
     fn max_retries() -> MaxRetries {
         MaxRetries::Count(1)
     }
@@ -39,7 +61,7 @@ impl Processor for MyProcessor {
     }
 
     fn process(&self, args: Self::Arguments) -> Box<dyn Future<Item = (), Error = Error> + Send> {
-        println!("args: {:?}", args);
+        info!("args: {:?}", args);
 
         Box::new(Ok(()).into_future())
     }

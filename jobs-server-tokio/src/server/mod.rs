@@ -30,7 +30,7 @@ pub(crate) struct Config {
 }
 
 impl Config {
-    fn create_server(&self) -> impl Future<Item = (), Error = ()> {
+    fn create_server(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let runner_id = self.runner_id;
         let db_path = self.db_path.clone();
         let base_port = self.base_port;
@@ -38,7 +38,7 @@ impl Config {
 
         let config = Arc::new(self.clone());
 
-        poll_fn(move || {
+        let fut = poll_fn(move || {
             let runner_id = runner_id;
             let db_path = db_path.clone();
             let base_port = base_port;
@@ -60,6 +60,8 @@ impl Config {
 
                 let address = format!("tcp://{}:{}", config.ip, port);
 
+                info!("Creating queue {} on address {}", queue, address);
+
                 tokio::spawn(PushConfig::init(
                     address,
                     queue.to_owned(),
@@ -71,6 +73,7 @@ impl Config {
             StalledConfig::init(storage.clone());
 
             let portmap_address = format!("tcp://{}:{}", config.ip, config.base_port + 1);
+            info!("Creating portmap on address {}", portmap_address);
 
             tokio::spawn(PortMapConfig::init(
                 portmap_address,
@@ -79,12 +82,15 @@ impl Config {
             ));
 
             let pull_address = format!("tcp://{}:{}", config.ip, config.base_port);
+            info!("Creating puller on address {}", pull_address);
 
             tokio::spawn(PullConfig::init(pull_address, storage, config));
 
             Ok(())
         })
-        .map_err(|e| error!("Error starting server, {}", e))
+        .map_err(|e| error!("Error starting server, {}", e));
+
+        Box::new(fut)
     }
 }
 
@@ -101,7 +107,7 @@ impl ServerConfig {
         runner_id: usize,
         queues: BTreeSet<String>,
         db_path: P,
-    ) -> impl Future<Item = (), Error = ()> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let context = Arc::new(Context::new());
 
         Self::init_with_context(ip, base_port, runner_id, queues, db_path, context)
@@ -114,7 +120,7 @@ impl ServerConfig {
         queues: BTreeSet<String>,
         db_path: P,
         context: Arc<Context>,
-    ) -> impl Future<Item = (), Error = ()> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let config = Config {
             ip: ip.to_owned(),
             base_port,
