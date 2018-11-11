@@ -74,6 +74,7 @@ fn return_job(
 
 fn try_process_job(
     storage: Storage,
+    queue: String,
     processor_count: usize,
     processors: Processors,
     tx: Sender<ProcessorMessage>,
@@ -81,10 +82,11 @@ fn try_process_job(
     if processor_count > 0 {
         let fut = poll_fn(move || {
             let storage = storage.clone();
+            let queue = queue.clone();
 
             blocking(move || {
                 storage
-                    .dequeue_job(processor_count)
+                    .dequeue_job(processor_count, &queue)
                     .map_err(|e| error!("Error dequeuing job, {}", e))
             })
             .map_err(|e| error!("Error blocking, {}", e))
@@ -145,6 +147,7 @@ fn process_jobs(
                 }
                 ProcessorMessage::Time(_) => Either::B(Either::A(try_process_job(
                     storage.clone(),
+                    "default".to_owned(),
                     processor_count,
                     processors,
                     tx.clone(),

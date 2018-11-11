@@ -49,8 +49,8 @@ impl KvActor {
         Ok(())
     }
 
-    pub fn dequeue_jobs(&self, limit: usize) -> Result<Vec<JobInfo>, Error> {
-        let jobs = self.storage.dequeue_job(limit)?;
+    pub fn dequeue_jobs(&self, limit: usize, queue: &str) -> Result<Vec<JobInfo>, Error> {
+        let jobs = self.storage.dequeue_job(limit, queue)?;
 
         Ok(jobs)
     }
@@ -72,7 +72,7 @@ impl Handler<DequeueJobs> for KvActor {
     type Result = Result<Vec<JobInfo>, Error>;
 
     fn handle(&mut self, msg: DequeueJobs, _: &mut Self::Context) -> Self::Result {
-        self.dequeue_jobs(msg.0)
+        self.dequeue_jobs(msg.0, &msg.1)
     }
 }
 
@@ -84,7 +84,7 @@ impl Message for StoreJob {
 }
 
 #[derive(Debug)]
-pub struct DequeueJobs(usize);
+pub struct DequeueJobs(usize, String);
 
 impl Message for DequeueJobs {
     type Result = Result<Vec<JobInfo>, Error>;
@@ -149,7 +149,7 @@ impl ProcessorActor {
         wrap_future(
             actor
                 .store
-                .send(DequeueJobs(1))
+                .send(DequeueJobs(1, "default".to_owned()))
                 .then(coerce)
                 .map_err(|e| error!("Error fetching jobs, {}", e))
                 .and_then(|jobs| jobs.into_iter().next().ok_or(())),

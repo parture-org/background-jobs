@@ -11,6 +11,9 @@ pub struct JobInfo {
     /// Name of the processor that should handle this job
     processor: String,
 
+    /// Name of the queue that this job is a part of
+    queue: String,
+
     /// Arguments for a given job
     args: Value,
 
@@ -26,13 +29,17 @@ pub struct JobInfo {
     /// How often retries should be scheduled
     backoff_strategy: Backoff,
 
-    /// The time this job was re-queued
+    /// The time this job should be dequeued
     next_queue: Option<DateTime<Utc>>,
+
+    /// The time this job was last updated
+    updated_at: DateTime<Utc>,
 }
 
 impl JobInfo {
     pub(crate) fn new(
         processor: String,
+        queue: String,
         args: Value,
         max_retries: MaxRetries,
         backoff_strategy: Backoff,
@@ -40,14 +47,21 @@ impl JobInfo {
         JobInfo {
             id: None,
             processor,
+            queue,
             status: JobStatus::Pending,
             args,
             retry_count: 0,
             max_retries,
             next_queue: None,
             backoff_strategy,
+            updated_at: Utc::now(),
         }
     }
+
+    pub(crate) fn updated(&mut self) {
+        self.updated_at = Utc::now();
+    }
+
     pub(crate) fn processor(&self) -> &str {
         &self.processor
     }
@@ -89,6 +103,10 @@ impl JobInfo {
         self.next_queue = Some(next_queue);
     }
 
+    pub(crate) fn is_stale(&self) -> bool {
+        self.updated_at < Utc::now() - OldDuration::days(1)
+    }
+
     pub(crate) fn is_ready(&self, now: DateTime<Utc>) -> bool {
         match self.next_queue {
             Some(ref time) => now > *time,
@@ -98,6 +116,10 @@ impl JobInfo {
 
     pub(crate) fn is_failed(&self) -> bool {
         self.status == JobStatus::Failed
+    }
+
+    pub(crate) fn is_in_queue(&self, queue: &str) -> bool {
+        self.queue == queue
     }
 
     pub(crate) fn pending(&mut self) {

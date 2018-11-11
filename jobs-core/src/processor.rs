@@ -19,6 +19,12 @@ pub trait Processor: Clone {
     /// This name must be unique!!! It is used to look up which processor should handle a job
     fn name() -> &'static str;
 
+    /// The name of the queue
+    ///
+    /// The queue determines which workers should process which jobs. By default, all workers
+    /// process all jobs, but that can be configured when starting the workers
+    fn queue() -> &'static str;
+
     /// Define the default number of retries for a given processor
     ///
     /// Jobs can override
@@ -56,6 +62,10 @@ pub trait Processor: Clone {
     ///         "IncrementProcessor"
     ///     }
     ///
+    ///     fn queue() -> &'static str {
+    ///         "default"
+    ///     }
+    ///
     ///     fn max_retries() -> MaxRetries {
     ///         MaxRetries::Count(1)
     ///     }
@@ -87,6 +97,7 @@ pub trait Processor: Clone {
     ) -> Result<JobInfo, Error> {
         let job = JobInfo::new(
             Self::name().to_owned(),
+            Self::queue().to_owned(),
             serde_json::to_value(args)?,
             max_retries.unwrap_or(Self::max_retries()),
             backoff_strategy.unwrap_or(Self::backoff_strategy()),

@@ -1,5 +1,7 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     path::PathBuf,
+    str::Utf8Error,
     sync::{Arc, RwLock, RwLockWriteGuard},
 };
 
@@ -85,7 +87,66 @@ impl Storage {
         Ok(new_id)
     }
 
-    pub fn dequeue_job(&self, limit: usize) -> Result<Vec<JobInfo>, Error> {
+    pub fn check_stalled_jobs(&self) -> Result<(), Error> {
+        let store = self.store.write()?;
+        let job_bucket =
+            store.bucket::<&[u8], ValueBuf<Json<JobInfo>>>(Some(Storage::job_store()))?;
+
+        let lock_bucket =
+            store.bucket::<&[u8], ValueBuf<Json<usize>>>(Some(Storage::job_lock()))?;
+
+        let buckets = Buckets::new(&store)?;
+
+        let mut write_txn = store.write_txn()?;
+        let read_txn = store.read_txn()?;
+
+        self.with_lock::<_, (), _>(&lock_bucket, &mut write_txn, b"job-queue", |inner_txn| {
+            let mut cursor = read_txn.read_cursor(&buckets.running)?;
+            match cursor.get(None, CursorOp::First) {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::NotFound => {
+                        return Ok(());
+                    }
+                    e => {
+                        return Err(e);
+                    }
+                },
+            }
+
+            let initial_value = Ok(inner_txn) as Result<&mut Txn, Error>;
+
+            let _ = cursor.iter().fold(initial_value, |acc, (key, _)| {
+                acc.and_then(|inner_txn| {
+                    let mut job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
+
+                    if job.is_stale() {
+                        if job.increment().should_requeue() {
+                            let job_value = Json::to_value_buf(job)?;
+                            inner_txn.set(&job_bucket, key, job_value)?;
+                            self.queue_job(&buckets, inner_txn, key)?;
+                        } else {
+                            job.fail();
+                            let job_value = Json::to_value_buf(job)?;
+                            inner_txn.set(&job_bucket, key, job_value)?;
+                            self.fail_job(&buckets, inner_txn, key)?;
+                        }
+                    }
+
+                    Ok(inner_txn)
+                })
+            })?;
+
+            Ok(())
+        })?;
+
+        read_txn.commit()?;
+        write_txn.commit()?;
+
+        Ok(())
+    }
+
+    pub fn dequeue_job(&self, limit: usize, queue: &str) -> Result<Vec<JobInfo>, Error> {
         let store = self.store.write()?;
 
         trace!("Got store");
@@ -103,8 +164,11 @@ impl Storage {
         let mut txn = store.write_txn()?;
         let read_txn = store.read_txn()?;
 
-        let result =
-            self.with_lock::<_, Vec<JobInfo>>(&lock_bucket, &mut txn, b"job-queue", |inner_txn| {
+        let result = self.with_lock::<_, Vec<JobInfo>, _>(
+            &lock_bucket,
+            &mut txn,
+            b"job-queue",
+            |inner_txn| {
                 let mut cursor = read_txn.read_cursor(&buckets.queued)?;
                 trace!("Got cursor");
                 match cursor.get(None, CursorOp::First) {
@@ -127,28 +191,25 @@ impl Storage {
                 let now = Utc::now();
 
                 trace!("Got lock");
-                let (_inner_txn, vec) =
-                    cursor
-                        .iter()
-                        .fold(initial_value, |acc, (key, _)| match acc {
-                            Ok((inner_txn, mut jobs)) => {
-                                if jobs.len() < limit {
-                                    let job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
+                let (_inner_txn, vec) = cursor.iter().fold(initial_value, |acc, (key, _)| {
+                    acc.and_then(|(inner_txn, mut jobs)| {
+                        if jobs.len() < limit {
+                            let job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
 
-                                    if job.is_ready(now) {
-                                        self.run_job(&buckets, inner_txn, key)?;
+                            if job.is_ready(now) && job.is_in_queue(queue) {
+                                self.run_job(&buckets, inner_txn, key)?;
 
-                                        jobs.push(job);
-                                    }
-                                }
-
-                                Ok((inner_txn, jobs))
+                                jobs.push(job);
                             }
-                            Err(e) => Err(e),
-                        })?;
+                        }
+
+                        Ok((inner_txn, jobs))
+                    })
+                })?;
 
                 Ok(vec)
-            })?;
+            },
+        )?;
 
         trace!("Committing");
 
@@ -170,6 +231,8 @@ impl Storage {
                 id.to_string()
             }
         };
+
+        job.updated();
 
         trace!("Generaged job id, {}", job_id);
 
@@ -210,6 +273,81 @@ impl Storage {
         trace!("Committed");
 
         Ok(())
+    }
+
+    pub fn get_port_mapping(
+        &self,
+        base_port: usize,
+        queues: BTreeSet<String>,
+    ) -> Result<BTreeMap<String, usize>, PortMapError> {
+        let store = self.store.write().map_err(|e| Error::from(e))?;
+
+        let queue_port_bucket =
+            store.bucket::<&[u8], ValueBuf<Json<usize>>>(Some(Storage::queue_port()))?;
+
+        let read_txn = store.read_txn()?;
+        let mut write_txn = store.write_txn()?;
+
+        let lock_name = "lock-queue";
+
+        let queue_map = self.with_lock::<_, _, PortMapError>(
+            &queue_port_bucket,
+            &mut write_txn,
+            lock_name.as_ref(),
+            |write_txn| {
+                let mut cursor = read_txn.read_cursor(&queue_port_bucket)?;
+
+                let (unused_queues, queue_map) = cursor.iter().fold(
+                    Ok((queues.clone(), BTreeMap::new())),
+                    |acc: Result<_, PortMapError>, (queue, port)| {
+                        acc.and_then(move |(mut queues, mut map)| {
+                            let port: usize = port.inner()?.to_serde();
+                            let queue = std::str::from_utf8(queue)?.to_owned();
+
+                            if queue != lock_name {
+                                queues.remove(&queue);
+                                map.insert(queue, port);
+                            }
+
+                            Ok((queues, map))
+                        })
+                    },
+                )?;
+
+                // The starting port for new queues should be one greater than the maximum port
+                // number in the btree set, or 2 greater than the base port.
+                //
+                // This is because there need to be two admin ports before the queue ports begin.
+                let start_port = queue_map
+                    .iter()
+                    .map(|(_, v)| *v)
+                    .filter(|v| *v != 0)
+                    .max()
+                    .unwrap_or(base_port + 1)
+                    + 1;
+
+                let (_, queue_map, _) = unused_queues.into_iter().fold(
+                    Ok((write_txn, queue_map, start_port)),
+                    |acc: Result<_, PortMapError>, queue_name| {
+                        acc.and_then(|(write_txn, mut queue_map, port_num)| {
+                            let port = Json::to_value_buf(port_num)?;
+
+                            write_txn.set(&queue_port_bucket, queue_name.as_ref(), port)?;
+                            queue_map.insert(queue_name, port_num);
+
+                            Ok((write_txn, queue_map, port_num + 1))
+                        })
+                    },
+                )?;
+
+                Ok(queue_map)
+            },
+        )?;
+
+        read_txn.commit()?;
+        write_txn.commit()?;
+
+        Ok(queue_map)
     }
 
     fn queue_job<'env>(
@@ -302,15 +440,16 @@ impl Storage {
     //
     // But in the event of multiple processes running on the same machine, it is good to have some
     // way to make sure they don't step on eachother's toes
-    fn with_lock<'env, F, T>(
+    fn with_lock<'env, F, T, E>(
         &self,
         lock_bucket: &'env Bucket<&[u8], ValueBuf<Json<usize>>>,
         txn: &mut Txn<'env>,
         lock_key: &[u8],
         callback: F,
-    ) -> Result<T, Error>
+    ) -> Result<T, E>
     where
-        F: Fn(&mut Txn<'env>) -> Result<T, Error>,
+        F: Fn(&mut Txn<'env>) -> Result<T, E>,
+        E: From<Error>,
     {
         let mut other_runner_id = 0;
 
@@ -339,16 +478,16 @@ impl Storage {
                         }
                         Err(e) => match e {
                             Error::NotFound => continue,
-                            e => return Err(e),
+                            e => return Err(e.into()),
                         },
                     }
 
                     match e {
                         Error::LMDB(lmdb) => match lmdb {
                             LmdbError::KeyExist => continue,
-                            e => return Err(Error::LMDB(e)),
+                            e => return Err(Error::LMDB(e).into()),
                         },
-                        e => return Err(e),
+                        e => return Err(e.into()),
                     }
                 }
             }
@@ -361,7 +500,7 @@ impl Storage {
         Ok(item)
     }
 
-    fn buckets() -> [&'static str; 7] {
+    fn buckets() -> [&'static str; 8] {
         [
             Storage::id_store(),
             Storage::job_store(),
@@ -370,6 +509,7 @@ impl Storage {
             Storage::job_running(),
             Storage::job_lock(),
             Storage::job_finished(),
+            Storage::queue_port(),
         ]
     }
 
@@ -399,5 +539,30 @@ impl Storage {
 
     fn job_lock() -> &'static str {
         "job-lock"
+    }
+
+    fn queue_port() -> &'static str {
+        "queue-port"
+    }
+}
+
+#[derive(Debug, Fail)]
+pub enum PortMapError {
+    #[fail(display = "Error in KV, {}", _0)]
+    Kv(#[cause] Error),
+
+    #[fail(display = "Error parsing to Utf8, {}", _0)]
+    Utf8(#[cause] Utf8Error),
+}
+
+impl From<Error> for PortMapError {
+    fn from(e: Error) -> Self {
+        PortMapError::Kv(e)
+    }
+}
+
+impl From<Utf8Error> for PortMapError {
+    fn from(e: Utf8Error) -> Self {
+        PortMapError::Utf8(e)
     }
 }
