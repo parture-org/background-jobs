@@ -57,7 +57,7 @@ impl PushConfig {
             .from_err()
             .and_then(move |_| dequeue_jobs(storage.clone(), queue.clone()))
             .flatten()
-            .forward(pusher.sink())
+            .forward(pusher.sink(25))
             .map(move |_| {
                 info!(
                     "Pusher for queue {} is shutting down",
@@ -137,6 +137,7 @@ impl ResetPushConfig {
 
     fn build(self) -> impl Future<Item = (), Error = Error> {
         lazy(|| {
+            info!("Building and spawning new server");
             let pusher = Push::builder(self.config.context.clone())
                 .bind(&self.address)
                 .build()?;

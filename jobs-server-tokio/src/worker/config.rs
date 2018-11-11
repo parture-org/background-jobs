@@ -57,7 +57,7 @@ impl Worker {
             .stream()
             .from_err::<Error>()
             .and_then(move |multipart| wrap_processing(multipart, &processors))
-            .forward(push.sink())
+            .forward(push.sink(2))
             .map(move |_| info!("worker for queue {} is shutting down", queue))
             .map_err(|e| {
                 error!("Error processing job, {}", e);

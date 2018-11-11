@@ -40,7 +40,7 @@ impl PortMapConfig {
             config: _,
         } = self;
 
-        let (sink, stream) = rep.sink_stream().split();
+        let (sink, stream) = rep.sink_stream(1).split();
 
         let fut = stream
             .from_err::<Error>()
