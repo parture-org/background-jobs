@@ -1,13 +1,14 @@
 use std::{sync::Arc, time::Duration};
 
-use failure::Error;
-use futures::{
-    future::{lazy, poll_fn},
-    Future, Stream,
-};
+use failure::{Error, Fail};
+use futures::{future::poll_fn, Future, Stream};
+#[cfg(feature = "futures-zmq")]
+use futures_zmq::{prelude::*, Multipart, Pull};
 use jobs_core::{JobInfo, Storage};
+use log::{error, info, trace};
 use tokio::timer::Delay;
 use tokio_threadpool::blocking;
+#[cfg(feature = "tokio-zmq")]
 use tokio_zmq::{prelude::*, Multipart, Pull};
 
 use crate::server::{coerce, Config};
@@ -112,21 +113,19 @@ impl ResetPullConfig {
     }
 
     fn build(self) -> impl Future<Item = (), Error = Error> {
-        lazy(|| {
-            let puller = Pull::builder(self.config.context.clone())
-                .bind(&self.address)
-                .build()?;
+        Pull::builder(self.config.context.clone())
+            .bind(&self.address)
+            .build()
+            .map(|puller| {
+                let config = PullConfig {
+                    puller,
+                    address: self.address,
+                    storage: self.storage,
+                    config: self.config,
+                };
 
-            let config = PullConfig {
-                puller,
-                address: self.address,
-                storage: self.storage,
-                config: self.config,
-            };
-
-            tokio::spawn(config.run());
-
-            Ok(())
-        })
+                tokio::spawn(config.run());
+            })
+            .from_err()
     }
 }

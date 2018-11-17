@@ -16,7 +16,7 @@ members = [
 ]
 
 [features]
-default = ["jobs-actix", "jobs-server-tokio", "jobs-tokio"]
+default = ["jobs-actix", "jobs-server-tokio", "jobs-server-tokio/tokio-zmq", "jobs-tokio"]
 
 [dependencies.jobs-actix]
 version = "0.1"

@@ -1,14 +1,14 @@
 use std::{sync::Arc, time::Duration};
 
 use failure::Error;
-use futures::{
-    future::{lazy, poll_fn},
-    stream::iter_ok,
-    Future, Stream,
-};
+use futures::{future::poll_fn, stream::iter_ok, Future, Stream};
+#[cfg(feature = "futures-zmq")]
+use futures_zmq::{prelude::*, Multipart, Push};
 use jobs_core::{JobInfo, Storage};
+use log::{error, info};
 use tokio::timer::{Delay, Interval};
 use tokio_threadpool::blocking;
+#[cfg(feature = "tokio-zmq")]
 use tokio_zmq::{prelude::*, Multipart, Push};
 use zmq::Message;
 
@@ -136,23 +136,21 @@ impl ResetPushConfig {
     }
 
     fn build(self) -> impl Future<Item = (), Error = Error> {
-        lazy(|| {
-            info!("Building and spawning new server");
-            let pusher = Push::builder(self.config.context.clone())
-                .bind(&self.address)
-                .build()?;
+        info!("Building and spawning new server");
+        Push::builder(self.config.context.clone())
+            .bind(&self.address)
+            .build()
+            .map(|pusher| {
+                let config = PushConfig {
+                    pusher,
+                    address: self.address,
+                    queue: self.queue,
+                    storage: self.storage,
+                    config: self.config,
+                };
 
-            let config = PushConfig {
-                pusher,
-                address: self.address,
-                queue: self.queue,
-                storage: self.storage,
-                config: self.config,
-            };
-
-            tokio::spawn(config.run());
-
-            Ok(())
-        })
+                tokio::spawn(config.run());
+            })
+            .from_err()
     }
 }

@@ -1,8 +1,3 @@
-#[macro_use]
-extern crate failure;
-#[macro_use]
-extern crate log;
-
 use failure::Error;
 
 mod server;

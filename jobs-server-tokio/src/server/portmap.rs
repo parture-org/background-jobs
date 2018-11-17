@@ -1,8 +1,12 @@
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use failure::Error;
-use futures::{future::lazy, Future, Stream};
+use futures::{Future, Stream};
+#[cfg(feature = "futures-zmq")]
+use futures_zmq::{prelude::*, Multipart, Rep};
+use log::{error, info};
 use tokio::timer::Delay;
+#[cfg(feature = "tokio-zmq")]
 use tokio_zmq::{prelude::*, Multipart, Rep};
 use zmq::Message;
 
@@ -85,21 +89,19 @@ impl ResetPortMapConfig {
     }
 
     fn build(self) -> impl Future<Item = (), Error = Error> {
-        lazy(|| {
-            let rep = Rep::builder(self.config.context.clone())
-                .bind(&self.address)
-                .build()?;
+        Rep::builder(self.config.context.clone())
+            .bind(&self.address)
+            .build()
+            .map(|rep| {
+                let config = PortMapConfig {
+                    rep,
+                    address: self.address,
+                    port_map: self.port_map,
+                    config: self.config,
+                };
 
-            let config = PortMapConfig {
-                rep,
-                address: self.address,
-                port_map: self.port_map,
-                config: self.config,
-            };
-
-            tokio::spawn(config.run());
-
-            Ok(())
-        })
+                tokio::spawn(config.run());
+            })
+            .from_err()
     }
 }

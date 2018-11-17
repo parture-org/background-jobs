@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use failure::Error;
 use futures::{future::IntoFuture, Future};
+#[cfg(feature = "futures-zmq")]
+use futures_zmq::{prelude::*, Push};
 use jobs_core::JobInfo;
+use log::{debug, trace};
+#[cfg(feature = "tokio-zmq")]
 use tokio_zmq::{prelude::*, Push};
 use zmq::{Context, Message};
 

@@ -12,9 +12,19 @@ serde = "1.0"
 serde_json = "1.0"
 tokio = "0.1"
 tokio-threadpool = "0.1"
-tokio-zmq = "0.6.1"
 zmq = "0.8"
+
+[features]
+default = ["tokio-zmq"]
 
 [dependencies.jobs-core]
 version = "0.1"
 path = "../jobs-core"
+
+[dependencies.tokio-zmq]
+version = "0.8"
+optional = true
+
+[dependencies.futures-zmq]
+version = "0.3"
+optional = true

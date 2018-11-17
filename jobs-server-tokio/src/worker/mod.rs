@@ -1,7 +1,9 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use failure::Fail;
 use futures::Future;
 use jobs_core::{Processor, Processors};
+use log::{error, info};
 use zmq::Context;
 
 mod config;

@@ -4,9 +4,10 @@ use std::{
     sync::Arc,
 };
 
-use failure::Error;
+use failure::{Error, Fail};
 use futures::{future::poll_fn, Future};
 use jobs_core::Storage;
+use log::{error, info};
 use tokio_threadpool::blocking;
 use zmq::Context;
 

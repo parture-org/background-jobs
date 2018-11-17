@@ -1,12 +1,16 @@
 use std::{sync::Arc, time::Duration};
 
-use failure::Error;
+use failure::{Error, Fail};
 use futures::{
-    future::{lazy, Either, IntoFuture},
+    future::{Either, IntoFuture},
     Future, Stream,
 };
+#[cfg(feature = "futures-zmq")]
+use futures_zmq::{prelude::*, Multipart, Pull, Push};
 use jobs_core::{JobInfo, Processors};
+use log::{error, info};
 use tokio::timer::Delay;
+#[cfg(feature = "tokio-zmq")]
 use tokio_zmq::{prelude::*, Multipart, Pull, Push};
 use zmq::{Context, Message};
 
@@ -98,29 +102,28 @@ impl ResetWorker {
     }
 
     fn build(self) -> impl Future<Item = (), Error = Error> {
-        lazy(|| {
-            let push = Push::builder(self.context.clone())
-                .connect(&self.push_address)
-                .build()?;
+        Push::builder(self.context.clone())
+            .connect(&self.push_address)
+            .build()
+            .join(
+                Pull::builder(self.context.clone())
+                    .connect(&self.pull_address)
+                    .build(),
+            )
+            .map(|(push, pull)| {
+                let config = Worker {
+                    push,
+                    pull,
+                    push_address: self.push_address,
+                    pull_address: self.pull_address,
+                    queue: self.queue,
+                    processors: self.processors,
+                    context: self.context,
+                };
 
-            let pull = Pull::builder(self.context.clone())
-                .connect(&self.pull_address)
-                .build()?;
-
-            let config = Worker {
-                push,
-                pull,
-                push_address: self.push_address,
-                pull_address: self.pull_address,
-                queue: self.queue,
-                processors: self.processors,
-                context: self.context,
-            };
-
-            tokio::spawn(config.run());
-
-            Ok(())
-        })
+                tokio::spawn(config.run());
+            })
+            .from_err()
     }
 }
 
