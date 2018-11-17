@@ -14,6 +14,7 @@ use crate::{JobInfo, JobStatus};
 struct Buckets<'a> {
     queued: Bucket<'a, &'a [u8], ValueBuf<Json<usize>>>,
     running: Bucket<'a, &'a [u8], ValueBuf<Json<usize>>>,
+    staged: Bucket<'a, &'a [u8], ValueBuf<Json<usize>>>,
     failed: Bucket<'a, &'a [u8], ValueBuf<Json<usize>>>,
     finished: Bucket<'a, &'a [u8], ValueBuf<Json<usize>>>,
 }
@@ -23,6 +24,7 @@ impl<'a> Buckets<'a> {
         let b = Buckets {
             queued: store.bucket(Some(Storage::job_queue()))?,
             running: store.bucket(Some(Storage::job_running()))?,
+            staged: store.bucket(Some(Storage::job_staged()))?,
             failed: store.bucket(Some(Storage::job_failed()))?,
             finished: store.bucket(Some(Storage::job_finished()))?,
         };
@@ -87,6 +89,56 @@ impl Storage {
         Ok(new_id)
     }
 
+    pub fn requeue_staged_jobs(&self) -> Result<(), Error> {
+        let store = self.store.write()?;
+        let job_bucket =
+            store.bucket::<&[u8], ValueBuf<Json<JobInfo>>>(Some(Storage::job_store()))?;
+
+        let lock_bucket =
+            store.bucket::<&[u8], ValueBuf<Json<usize>>>(Some(Storage::job_lock()))?;
+
+        let buckets = Buckets::new(&store)?;
+
+        let mut write_txn = store.write_txn()?;
+        let read_txn = store.read_txn()?;
+
+        self.with_lock::<_, (), _>(&lock_bucket, &mut write_txn, b"job-queue", |inner_txn| {
+            let mut cursor = read_txn.read_cursor(&buckets.staged)?;
+            match cursor.get(None, CursorOp::First) {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::NotFound => {
+                        return Ok(());
+                    }
+                    e => {
+                        return Err(e);
+                    }
+                },
+            }
+
+            let initial_value = Ok(inner_txn) as Result<&mut Txn, Error>;
+
+            let _ = cursor.iter().fold(initial_value, |acc, (key, _)| {
+                acc.and_then(|inner_txn| {
+                    let job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
+
+                    let job_value = Json::to_value_buf(job)?;
+                    inner_txn.set(&job_bucket, key, job_value)?;
+                    self.queue_job(&buckets, inner_txn, key)?;
+
+                    Ok(inner_txn)
+                })
+            })?;
+
+            Ok(())
+        })?;
+
+        read_txn.commit()?;
+        write_txn.commit()?;
+
+        Ok(())
+    }
+
     pub fn check_stalled_jobs(&self) -> Result<(), Error> {
         let store = self.store.write()?;
         let job_bucket =
@@ -146,7 +198,7 @@ impl Storage {
         Ok(())
     }
 
-    pub fn dequeue_job(&self, limit: usize, queue: &str) -> Result<Vec<JobInfo>, Error> {
+    pub fn stage_jobs(&self, limit: usize, queue: &str) -> Result<Vec<JobInfo>, Error> {
         let store = self.store.write()?;
 
         trace!("Got store");
@@ -194,10 +246,12 @@ impl Storage {
                 let (_inner_txn, vec) = cursor.iter().fold(initial_value, |acc, (key, _)| {
                     acc.and_then(|(inner_txn, mut jobs)| {
                         if jobs.len() < limit {
-                            let job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
+                            let mut job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
+
+                            job.stage();
 
                             if job.is_ready(now) && job.is_in_queue(queue) {
-                                self.run_job(&buckets, inner_txn, key)?;
+                                self.stage_job(&buckets, inner_txn, key)?;
 
                                 jobs.push(job);
                             }
@@ -263,6 +317,7 @@ impl Storage {
         match status {
             JobStatus::Pending => self.queue_job(&buckets, &mut txn, job_id.as_ref())?,
             JobStatus::Running => self.run_job(&buckets, &mut txn, job_id.as_ref())?,
+            JobStatus::Staged => self.stage_job(&buckets, &mut txn, job_id.as_ref())?,
             JobStatus::Failed => self.fail_job(&buckets, &mut txn, job_id.as_ref())?,
             JobStatus::Finished => self.finish_job(&buckets, &mut txn, job_id.as_ref())?,
         }
@@ -350,6 +405,21 @@ impl Storage {
         Ok(queue_map)
     }
 
+    fn stage_job<'env>(
+        &self,
+        buckets: &'env Buckets<'env>,
+        txn: &mut Txn<'env>,
+        id: &[u8],
+    ) -> Result<(), Error> {
+        self.add_job_to(&buckets.staged, txn, id)?;
+        self.delete_job_from(&buckets.finished, txn, id)?;
+        self.delete_job_from(&buckets.failed, txn, id)?;
+        self.delete_job_from(&buckets.running, txn, id)?;
+        self.delete_job_from(&buckets.queued, txn, id)?;
+
+        Ok(())
+    }
+
     fn queue_job<'env>(
         &self,
         buckets: &'env Buckets<'env>,
@@ -360,6 +430,7 @@ impl Storage {
         self.delete_job_from(&buckets.finished, txn, id)?;
         self.delete_job_from(&buckets.failed, txn, id)?;
         self.delete_job_from(&buckets.running, txn, id)?;
+        self.delete_job_from(&buckets.staged, txn, id)?;
 
         Ok(())
     }
@@ -373,6 +444,7 @@ impl Storage {
         self.add_job_to(&buckets.failed, txn, id)?;
         self.delete_job_from(&buckets.finished, txn, id)?;
         self.delete_job_from(&buckets.running, txn, id)?;
+        self.delete_job_from(&buckets.staged, txn, id)?;
         self.delete_job_from(&buckets.queued, txn, id)?;
 
         Ok(())
@@ -385,6 +457,7 @@ impl Storage {
         id: &[u8],
     ) -> Result<(), Error> {
         self.add_job_to(&buckets.running, txn, id)?;
+        self.delete_job_from(&buckets.staged, txn, id)?;
         self.delete_job_from(&buckets.finished, txn, id)?;
         self.delete_job_from(&buckets.failed, txn, id)?;
         self.delete_job_from(&buckets.queued, txn, id)?;
@@ -400,6 +473,7 @@ impl Storage {
     ) -> Result<(), Error> {
         self.add_job_to(&buckets.finished, txn, id)?;
         self.delete_job_from(&buckets.running, txn, id)?;
+        self.delete_job_from(&buckets.staged, txn, id)?;
         self.delete_job_from(&buckets.failed, txn, id)?;
         self.delete_job_from(&buckets.queued, txn, id)?;
 
@@ -500,13 +574,14 @@ impl Storage {
         Ok(item)
     }
 
-    fn buckets() -> [&'static str; 8] {
+    fn buckets() -> [&'static str; 9] {
         [
             Storage::id_store(),
             Storage::job_store(),
             Storage::job_queue(),
             Storage::job_failed(),
             Storage::job_running(),
+            Storage::job_staged(),
             Storage::job_lock(),
             Storage::job_finished(),
             Storage::queue_port(),
@@ -531,6 +606,10 @@ impl Storage {
 
     fn job_running() -> &'static str {
         "job-running"
+    }
+
+    fn job_staged() -> &'static str {
+        "job-staged"
     }
 
     fn job_finished() -> &'static str {

@@ -1,10 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
+use background_jobs_core::{JobInfo, Storage};
 use failure::Error;
 use futures::{future::poll_fn, stream::iter_ok, Future, Stream};
 #[cfg(feature = "futures-zmq")]
 use futures_zmq::{prelude::*, Multipart, Push};
-use jobs_core::{JobInfo, Storage};
 use log::{error, info};
 use tokio::timer::{Delay, Interval};
 use tokio_threadpool::blocking;
@@ -117,7 +117,7 @@ fn wrap_fetch_queue(storage: Arc<Storage>, queue: &str) -> Result<Vec<Multipart>
 }
 
 fn fetch_queue(storage: Arc<Storage>, queue: &str) -> Result<Vec<JobInfo>, Error> {
-    storage.dequeue_job(100, queue).map_err(Error::from)
+    storage.stage_jobs(100, queue).map_err(Error::from)
 }
 
 struct ResetPushConfig {

@@ -1,5 +1,5 @@
+use background_jobs::ServerConfig;
 use failure::Error;
-use jobs::ServerConfig;
 use server_jobs_example::queue_set;
 
 fn main() -> Result<(), Error> {

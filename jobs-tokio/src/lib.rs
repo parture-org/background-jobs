@@ -6,12 +6,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+use background_jobs_core::{JobInfo, Processor, Processors, Storage};
 use futures::{
     future::{poll_fn, Either, IntoFuture},
     sync::mpsc::{channel, Receiver, SendError, Sender},
     Future, Sink, Stream,
 };
-use jobs_core::{JobInfo, Processor, Processors, Storage};
 use tokio::timer::Interval;
 use tokio_threadpool::blocking;
 
@@ -86,7 +86,7 @@ fn try_process_job(
 
             blocking(move || {
                 storage
-                    .dequeue_job(processor_count, &queue)
+                    .stage_jobs(processor_count, &queue)
                     .map_err(|e| error!("Error dequeuing job, {}", e))
             })
             .map_err(|e| error!("Error blocking, {}", e))

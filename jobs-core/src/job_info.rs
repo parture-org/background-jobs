@@ -122,6 +122,14 @@ impl JobInfo {
         self.queue == queue
     }
 
+    pub(crate) fn stage(&mut self) {
+        self.status = JobStatus::Staged;
+    }
+
+    pub fn run(&mut self) {
+        self.status = JobStatus::Running;
+    }
+
     pub(crate) fn pending(&mut self) {
         self.status = JobStatus::Pending;
     }

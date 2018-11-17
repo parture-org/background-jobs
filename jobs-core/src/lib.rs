@@ -32,6 +32,9 @@ pub enum JobStatus {
     /// Job should be queued
     Pending,
 
+    /// Job has been dequeued, but is not yet running
+    Staged,
+
     /// Job is running
     Running,
 

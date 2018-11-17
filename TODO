@@ -1,7 +1,2 @@
 1.
 Gracefull Shutdown
-
-2.
-Don't mark pushed jobs as running, mark them as 'staged'
-Clear staged jobs that are 10 minutes old
-Send a Running notification from the worker to move a job from 'staged' to 'running'

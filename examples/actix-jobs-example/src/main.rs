@@ -3,9 +3,9 @@ extern crate log;
 #[macro_use]
 extern crate serde_derive;
 
+use background_jobs::{Backoff, JobsBuilder, MaxRetries, Processor, QueueJob};
 use failure::Error;
 use futures::{future::IntoFuture, Future};
-use jobs::{Backoff, JobsBuilder, MaxRetries, Processor, QueueJob};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct MyJobArguments {
@@ -21,6 +21,10 @@ impl Processor for MyProcessor {
 
     fn name() -> &'static str {
         "MyProcessor"
+    }
+
+    fn queue() -> &'static str {
+        "default"
     }
 
     fn max_retries() -> MaxRetries {

@@ -1,5 +1,5 @@
+use background_jobs::{Processor, SpawnerConfig};
 use futures::{future::lazy, Future};
-use jobs::{Processor, SpawnerConfig};
 use server_jobs_example::{MyJobArguments, MyProcessor};
 
 fn main() {

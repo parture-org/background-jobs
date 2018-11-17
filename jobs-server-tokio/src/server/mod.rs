@@ -4,9 +4,9 @@ use std::{
     sync::Arc,
 };
 
+use background_jobs_core::Storage;
 use failure::{Error, Fail};
 use futures::{future::poll_fn, Future};
-use jobs_core::Storage;
 use log::{error, info};
 use tokio_threadpool::blocking;
 use zmq::Context;
@@ -47,6 +47,7 @@ impl Config {
 
             blocking(move || {
                 let storage = Arc::new(Storage::init(runner_id, db_path)?);
+                storage.requeue_staged_jobs()?;
                 storage.check_stalled_jobs()?;
                 let port_map = storage.get_port_mapping(base_port, queues)?;
 

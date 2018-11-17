@@ -17,7 +17,7 @@ zmq = "0.8"
 [features]
 default = ["tokio-zmq"]
 
-[dependencies.jobs-core]
+[dependencies.background-jobs-core]
 version = "0.1"
 path = "../jobs-core"
 

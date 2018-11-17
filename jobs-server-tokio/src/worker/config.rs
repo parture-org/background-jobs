@@ -1,13 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
+use background_jobs_core::{JobInfo, Processors};
 use failure::{Error, Fail};
 use futures::{
-    future::{Either, IntoFuture},
-    Future, Stream,
+    sync::mpsc::{channel, Sender},
+    Future, Sink, Stream,
 };
 #[cfg(feature = "futures-zmq")]
 use futures_zmq::{prelude::*, Multipart, Pull, Push};
-use jobs_core::{JobInfo, Processors};
 use log::{error, info};
 use tokio::timer::Delay;
 #[cfg(feature = "tokio-zmq")]
@@ -17,6 +17,7 @@ use zmq::{Context, Message};
 pub(crate) struct Worker {
     pull: Pull,
     push: Push,
+    push2: Push,
     push_address: String,
     pull_address: String,
     queue: String,
@@ -49,6 +50,7 @@ impl Worker {
 
         let Worker {
             push,
+            push2,
             pull,
             push_address: _,
             pull_address: _,
@@ -57,11 +59,25 @@ impl Worker {
             context: _,
         } = self;
 
+        let (tx, rx) = channel(5);
+
+        tokio::spawn(
+            rx.map_err(|_| RecvError)
+                .from_err::<Error>()
+                .and_then(serialize_request)
+                .forward(push2.sink(1))
+                .map(|_| ())
+                .or_else(|_| Ok(())),
+        );
+
         let fut = pull
             .stream()
             .from_err::<Error>()
-            .and_then(move |multipart| wrap_processing(multipart, &processors))
-            .forward(push.sink(2))
+            .and_then(parse_multipart)
+            .and_then(move |job| report_running(job, tx.clone()))
+            .and_then(move |job| process_job(job, &processors))
+            .and_then(serialize_request)
+            .forward(push.sink(1))
             .map(move |_| info!("worker for queue {} is shutting down", queue))
             .map_err(|e| {
                 error!("Error processing job, {}", e);
@@ -106,13 +122,19 @@ impl ResetWorker {
             .connect(&self.push_address)
             .build()
             .join(
+                Push::builder(self.context.clone())
+                    .connect(&self.push_address)
+                    .build(),
+            )
+            .join(
                 Pull::builder(self.context.clone())
                     .connect(&self.pull_address)
                     .build(),
             )
-            .map(|(push, pull)| {
+            .map(|((push, push2), pull)| {
                 let config = Worker {
                     push,
+                    push2,
                     pull,
                     push_address: self.push_address,
                     pull_address: self.pull_address,
@@ -142,18 +164,15 @@ fn parse_multipart(mut multipart: Multipart) -> Result<JobInfo, Error> {
     Ok(parsed)
 }
 
-fn wrap_processing(
-    multipart: Multipart,
-    processors: &Processors,
-) -> impl Future<Item = Multipart, Error = Error> {
-    let msg = match parse_multipart(multipart) {
-        Ok(msg) => msg,
-        Err(e) => return Either::A(Err(e).into_future()),
-    };
+fn report_running(
+    mut job: JobInfo,
+    push: Sender<JobInfo>,
+) -> impl Future<Item = JobInfo, Error = Error> {
+    job.run();
 
-    let fut = process_job(msg, processors).and_then(serialize_request);
-
-    Either::B(fut)
+    push.send(job.clone())
+        .map(move |_| job)
+        .map_err(|_| NotifyError.into())
 }
 
 fn process_job(
@@ -173,3 +192,11 @@ struct ParseError;
 #[derive(Clone, Debug, Fail)]
 #[fail(display = "Error processing job")]
 struct ProcessError;
+
+#[derive(Clone, Debug, Fail)]
+#[fail(display = "Error notifying running has started")]
+struct NotifyError;
+
+#[derive(Clone, Debug, Fail)]
+#[fail(display = "Error receiving from mpsc")]
+struct RecvError;

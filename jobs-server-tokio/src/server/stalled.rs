@@ -1,8 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
+use background_jobs_core::Storage;
 use failure::Error;
 use futures::{future::poll_fn, Future, Stream};
-use jobs_core::Storage;
 use log::{error, info};
 use tokio::timer::{Delay, Interval};
 use tokio_threadpool::blocking;

@@ -14,8 +14,8 @@ serde = "1.0"
 serde_derive = "1.0"
 tokio = "0.1"
 
-[dependencies.jobs]
+[dependencies.background-jobs]
 version = "0.1"
 path = "../.."
 default-features = false
-features = ["jobs-server-tokio"]
+features = ["background-jobs-server-tokio"]

@@ -5,9 +5,9 @@ extern crate serde_derive;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use background_jobs::{Backoff, MaxRetries, Processor};
 use failure::Error;
 use futures::{future::IntoFuture, Future};
-use jobs::{Backoff, MaxRetries, Processor};
 
 pub fn queue_map() -> BTreeMap<String, usize> {
     let mut map = BTreeMap::new();

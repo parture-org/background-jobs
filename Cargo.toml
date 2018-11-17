@@ -16,23 +16,23 @@ members = [
 ]
 
 [features]
-default = ["jobs-actix", "jobs-server-tokio", "jobs-server-tokio/tokio-zmq", "jobs-tokio"]
+default = ["background-jobs-actix", "background-jobs-server-tokio", "background-jobs-server-tokio/tokio-zmq", "background-jobs-tokio"]
 
-[dependencies.jobs-actix]
+[dependencies.background-jobs-actix]
 version = "0.1"
 path = "jobs-actix"
 optional = true
 
-[dependencies.jobs-core]
+[dependencies.background-jobs-core]
 version = "0.1"
 path = "jobs-core"
 
-[dependencies.jobs-server-tokio]
+[dependencies.background-jobs-server-tokio]
 version = "0.1"
 path = "jobs-server-tokio"
 optional = true
 
-[dependencies.jobs-tokio]
+[dependencies.background-jobs-tokio]
 version = "0.1"
 path = "jobs-tokio"
 optional = true

@@ -1,10 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
+use background_jobs_core::{JobInfo, Storage};
 use failure::{Error, Fail};
 use futures::{future::poll_fn, Future, Stream};
 #[cfg(feature = "futures-zmq")]
 use futures_zmq::{prelude::*, Multipart, Pull};
-use jobs_core::{JobInfo, Storage};
 use log::{error, info, trace};
 use tokio::timer::Delay;
 use tokio_threadpool::blocking;

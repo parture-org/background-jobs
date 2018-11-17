@@ -1,5 +1,5 @@
+use background_jobs::WorkerConfig;
 use failure::Error;
-use jobs::WorkerConfig;
 use server_jobs_example::{queue_map, MyProcessor};
 
 fn main() -> Result<(), Error> {

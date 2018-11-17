@@ -13,9 +13,9 @@ use actix::{
     fut::wrap_future, utils::IntervalFunc, Actor, ActorFuture, ActorStream, Addr, AsyncContext,
     Context, ContextFutureSpawner, Handler, Message, ResponseFuture, SyncArbiter, SyncContext,
 };
+use background_jobs_core::{JobInfo, Processor, Processors, Storage};
 use failure::Error;
 use futures::Future;
-use jobs_core::{JobInfo, Processor, Processors, Storage};
 
 fn coerce<I, E, F>(res: Result<Result<I, E>, F>) -> Result<I, E>
 where
@@ -50,7 +50,7 @@ impl KvActor {
     }
 
     pub fn dequeue_jobs(&self, limit: usize, queue: &str) -> Result<Vec<JobInfo>, Error> {
-        let jobs = self.storage.dequeue_job(limit, queue)?;
+        let jobs = self.storage.stage_jobs(limit, queue)?;
 
         Ok(jobs)
     }

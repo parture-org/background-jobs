@@ -5,12 +5,12 @@ extern crate serde_derive;
 
 use std::time::Duration;
 
+use background_jobs::{Backoff, JobRunner, MaxRetries, Processor};
 use failure::Error;
 use futures::{
     future::{lazy, IntoFuture},
     Future,
 };
-use jobs::{Backoff, JobRunner, MaxRetries, Processor};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct MyJobArguments {
@@ -26,6 +26,10 @@ impl Processor for MyProcessor {
 
     fn name() -> &'static str {
         "MyProcessor"
+    }
+
+    fn queue() -> &'static str {
+        "default"
     }
 
     fn max_retries() -> MaxRetries {

@@ -10,6 +10,6 @@ log = "0.4"
 tokio = "0.1"
 tokio-threadpool = "0.1"
 
-[dependencies.jobs-core]
+[dependencies.background-jobs-core]
 version = "0.1"
 path = "../jobs-core"
