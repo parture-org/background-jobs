@@ -8,31 +8,19 @@ edition = "2018"
 members = [
     "jobs-actix",
     "jobs-core",
-    "jobs-server-tokio",
+    "jobs-server",
     "jobs-tokio",
-    "examples/actix-jobs-example",
     "examples/server-jobs-example",
-    "examples/tokio-jobs-example",
 ]
 
 [features]
-default = ["background-jobs-actix", "background-jobs-server-tokio", "background-jobs-server-tokio/tokio-zmq", "background-jobs-tokio"]
-
-[dependencies.background-jobs-actix]
-version = "0.1"
-path = "jobs-actix"
-optional = true
+default = ["background-jobs-server", "background-jobs-server/tokio-zmq"]
 
 [dependencies.background-jobs-core]
 version = "0.1"
 path = "jobs-core"
 
-[dependencies.background-jobs-server-tokio]
+[dependencies.background-jobs-server]
 version = "0.1"
-path = "jobs-server-tokio"
-optional = true
-
-[dependencies.background-jobs-tokio]
-version = "0.1"
-path = "jobs-tokio"
+path = "jobs-server"
 optional = true
