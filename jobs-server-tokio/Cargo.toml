@@ -1,5 +1,5 @@
 [package]
-name = "jobs-server-tokio"
+name = "background-jobs-server-tokio"
 version = "0.1.0"
 authors = ["asonix <asonix@asonix.dog>"]
 edition = "2018"
