@@ -33,10 +33,10 @@ use crate::{Backoff, Job, JobError, JobInfo, MaxRetries};
 ///  - The job's default queue
 ///  - The job's default maximum number of retries
 ///  - The job's [backoff
-///    strategy](https://docs.rs/background-jobs/0.1.0/background_jobs/struct.Backoff)
+///    strategy](https://docs.rs/background-jobs/0.1.1/background_jobs/struct.Backoff)
 ///
 /// Processors also provide the default mechanism for running a job, and the only mechanism for
-/// creating a [JobInfo](https://docs.rs/background-jobs/0.1.0/background_jobs/struct.JobInfo),
+/// creating a [JobInfo](https://docs.rs/background-jobs/0.1.1/background_jobs/struct.JobInfo),
 /// which is the type required for queuing jobs to be executed.
 ///
 /// ### Example
@@ -160,7 +160,7 @@ pub trait Processor: Clone {
     /// Patterns like this could be useful if you want to use the same job type for multiple
     /// scenarios. Defining the `process` method for multiple `Processor`s with different
     /// before/after logic for the same
-    /// [`Job`](https://docs.rs/background-jobs/0.1.0/background_jobs/struct.Job) type is
+    /// [`Job`](https://docs.rs/background-jobs/0.1.1/background_jobs/struct.Job) type is
     /// supported.
     fn process(&self, args: Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
         let res = serde_json::from_value::<Self::Job>(args);

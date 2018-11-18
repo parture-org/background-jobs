@@ -1,10 +1,11 @@
 [package]
 name = "background-jobs"
 description = "Background Jobs implemented with tokio and futures"
-version = "0.1.0"
+version = "0.1.1"
 license = "GPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/asonix/background-jobs"
+readme = "README.md"
 keywords = ["jobs", "processor"]
 edition = "2018"
 
