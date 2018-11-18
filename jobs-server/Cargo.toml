@@ -1,7 +1,7 @@
 [package]
 name = "background-jobs-server"
 description = "Jobs processor server based on ZeroMQ"
-version = "0.2.0"
+version = "0.3.0"
 license = "GPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/asonix/background-jobs"
@@ -14,6 +14,7 @@ futures = "0.1"
 log = "0.4"
 serde = "1.0"
 serde_json = "1.0"
+serde_derive = "1.0"
 tokio = "0.1"
 tokio-threadpool = "0.1"
 zmq = "0.8"
@@ -22,7 +23,7 @@ zmq = "0.8"
 default = ["tokio-zmq"]
 
 [dependencies.background-jobs-core]
-version = "0.2"
+version = "0.3"
 path = "../jobs-core"
 
 [dependencies.tokio-zmq]

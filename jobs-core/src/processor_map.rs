@@ -27,41 +27,57 @@ use crate::{JobError, JobInfo, Processor};
 /// A generic function that processes a job
 ///
 /// Instead of storing
-/// [`Processor`](https://docs.rs/background-jobs/0.2.0/background_jobs/trait.Processor.html) type
+/// [`Processor`](https://docs.rs/background-jobs/0.3.0/background_jobs/trait.Processor.html) type
 /// directly, the
-/// [`ProcessorMap`](https://docs.rs/background-jobs-core/0.2.0/background_jobs_core/struct.ProcessorMap.html)
+/// [`ProcessorMap`](https://docs.rs/background-jobs-core/0.3.0/background_jobs_core/struct.ProcessorMap.html)
 /// struct stores these `ProcessFn` types that don't expose differences in Job types.
 pub type ProcessFn =
     Box<dyn Fn(Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send + Sync>;
 
 /// A type for storing the relationships between processor names and the processor itself
 ///
-/// [`Processor`s](https://docs.rs/background-jobs/0.2.0/background_jobs/trait.Processor.html) must
+/// [`Processor`s](https://docs.rs/background-jobs/0.3.0/background_jobs/trait.Processor.html) must
 /// be registered with  the `ProcessorMap` in the initialization phase of an application before
 /// workers are spawned in order to handle queued jobs.
-pub struct ProcessorMap {
+pub struct ProcessorMap<S>
+where
+    S: Clone,
+{
     inner: HashMap<String, ProcessFn>,
+    state: S,
 }
 
-impl ProcessorMap {
+impl<S> ProcessorMap<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
     /// Intialize a `ProcessorMap`
-    pub fn new() -> Self {
-        Default::default()
+    ///
+    /// The state passed into this method will be passed to all jobs executed through this
+    /// ProcessorMap. The state argument could be useful for containing a hook into something like
+    /// r2d2, or the address of an actor in an actix-based system.
+    pub fn new(state: S) -> Self {
+        ProcessorMap {
+            inner: HashMap::new(),
+            state,
+        }
     }
 
     /// Register a
-    /// [`Processor`](https://docs.rs/background-jobs/0.2.0/background_jobs/trait.Processor.html) with
+    /// [`Processor`](https://docs.rs/background-jobs/0.3.0/background_jobs/trait.Processor.html) with
     /// this `ProcessorMap`.
     ///
     /// `ProcessorMap`s are useless if no processors are registerd before workers are spawned, so
     /// make sure to register all your processors up-front.
     pub fn register_processor<P>(&mut self, processor: P)
     where
-        P: Processor + Send + Sync + 'static,
+        P: Processor<S> + Send + Sync + 'static,
     {
+        let state = self.state.clone();
+
         self.inner.insert(
             P::NAME.to_owned(),
-            Box::new(move |value| processor.process(value)),
+            Box::new(move |value| processor.process(value, state.clone())),
         );
     }
 
@@ -80,14 +96,6 @@ impl ProcessorMap {
         } else {
             error!("Processor {} not present", job.processor());
             Either::B(Ok(job).into_future())
-        }
-    }
-}
-
-impl Default for ProcessorMap {
-    fn default() -> Self {
-        ProcessorMap {
-            inner: Default::default(),
         }
     }
 }

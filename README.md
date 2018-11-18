@@ -44,6 +44,28 @@ impl Job for MyJob {
 }
 ```
 
+The run method for a job takes an additional argument, which is the state the job expects to
+use. The state for all jobs defined in an application must be the same. By default, the state
+is an empty tuple, but it's likely you'll want to pass in some Actix address, or something
+else.
+
+Let's re-define the job to care about some application state.
+
+```rust,ignore
+#[derive(Clone, Debug)]
+pub struct MyState {
+    pub app_name: String,
+}
+
+impl Job<MyState> for MyJob {
+    fn run(self, state: MyState) -> Box<dyn Future<Item = (), Error = Error> + Send> {
+        info!("{}: args, {:?}", state.app_name, self);
+
+        Box::new(Ok(()).into_future())
+    }
+}
+```
+
 #### Next, define a Processor.
 Processors are types that define default attributes for jobs, as well as containing some logic
 used internally to perform the job. Processors must implement `Proccessor` and `Clone`.
@@ -52,7 +74,7 @@ used internally to perform the job. Processors must implement `Proccessor` and `
 #[derive(Clone, Debug)]
 pub struct MyProcessor;
 
-impl Processor for MyProcessor {
+impl Processor<MyState> for MyProcessor {
     // The kind of job this processor should execute
     type Job = MyJob;
 
@@ -125,7 +147,14 @@ use server_jobs_example::{queue_map, MyProcessor};
 
 fn main() -> Result<(), Error> {
     // Create the worker config
-    let mut worker = WorkerConfig::new("localhost".to_owned(), 5555, queue_map());
+    let mut worker = WorkerConfig::new(
+        MyState {
+            app_name: "My Example Application".to_owned(),
+        },
+        "localhost".to_owned(),
+        5555,
+        queue_map()
+    );
 
     // Register our processor
     worker.register_processor(MyProcessor);

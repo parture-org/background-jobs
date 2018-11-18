@@ -33,11 +33,11 @@ use crate::{Backoff, Job, JobError, JobInfo, MaxRetries};
 ///  - The job's default queue
 ///  - The job's default maximum number of retries
 ///  - The job's [backoff
-///    strategy](https://docs.rs/background-jobs/0.2.0/background_jobs/enum.Backoff.html)
+///    strategy](https://docs.rs/background-jobs/0.3.0/background_jobs/enum.Backoff.html)
 ///
 /// Processors also provide the default mechanism for running a job, and the only mechanism for
 /// creating a
-/// [JobInfo](https://docs.rs/background-jobs-core/0.2.0/background_jobs_core/struct.JobInfo.html),
+/// [JobInfo](https://docs.rs/background-jobs-core/0.3.0/background_jobs_core/struct.JobInfo.html),
 /// which is the type required for queuing jobs to be executed.
 ///
 /// ### Example
@@ -54,8 +54,8 @@ use crate::{Backoff, Job, JobError, JobInfo, MaxRetries};
 ///     count: i32,
 /// }
 ///
-/// impl Job for MyJob {
-///     fn run(self) -> Box<dyn Future<Item = (), Error = Error> + Send> {
+/// impl Job<()> for MyJob {
+///     fn run(self, _state: ()) -> Box<dyn Future<Item = (), Error = Error> + Send> {
 ///         info!("Processing {}", self.count);
 ///
 ///         Box::new(Ok(()).into_future())
@@ -65,7 +65,7 @@ use crate::{Backoff, Job, JobError, JobInfo, MaxRetries};
 /// #[derive(Clone)]
 /// struct MyProcessor;
 ///
-/// impl Processor for MyProcessor {
+/// impl Processor<()> for MyProcessor {
 ///     type Job = MyJob;
 ///
 ///     const NAME: &'static str = "IncrementProcessor";
@@ -80,8 +80,11 @@ use crate::{Backoff, Job, JobError, JobInfo, MaxRetries};
 ///     Ok(())
 /// }
 /// ```
-pub trait Processor: Clone {
-    type Job: Job;
+pub trait Processor<S = ()>: Clone
+where
+    S: Clone + Send + Sync + 'static,
+{
+    type Job: Job<S>;
 
     /// The name of the processor
     ///
@@ -129,14 +132,22 @@ pub trait Processor: Clone {
     /// Advanced users may want to override this method in order to provide their own custom
     /// before/after logic for certain job processors
     ///
+    /// The state passed into this method is initialized at the start of the application. The state
+    /// argument could be useful for containing a hook into something like r2d2, or the address of
+    /// an actor in an actix-based system.
+    ///
     /// ```rust,ignore
-    /// fn process(&self, args: Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
+    /// fn process(
+    ///     &self,
+    ///     args: Value,
+    ///     state: S
+    /// ) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
     ///     let res = serde_json::from_value::<Self::Job>(args);
     ///
     ///     let fut = match res {
     ///         Ok(job) => {
     ///             // Perform some custom pre-job logic
-    ///             Either::A(job.run().map_err(JobError::Processing))
+    ///             Either::A(job.run(state).map_err(JobError::Processing))
     ///         },
     ///         Err(_) => Either::B(Err(JobError::Json).into_future()),
     ///     };
@@ -150,13 +161,17 @@ pub trait Processor: Clone {
     /// Patterns like this could be useful if you want to use the same job type for multiple
     /// scenarios. Defining the `process` method for multiple `Processor`s with different
     /// before/after logic for the same
-    /// [`Job`](https://docs.rs/background-jobs/0.2.0/background_jobs/trait.Job.html) type is
+    /// [`Job`](https://docs.rs/background-jobs/0.3.0/background_jobs/trait.Job.html) type is
     /// supported.
-    fn process(&self, args: Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
+    fn process(
+        &self,
+        args: Value,
+        state: S,
+    ) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
         let res = serde_json::from_value::<Self::Job>(args);
 
         let fut = match res {
-            Ok(job) => Either::A(job.run().map_err(JobError::Processing)),
+            Ok(job) => Either::A(job.run(state).map_err(JobError::Processing)),
             Err(_) => Either::B(Err(JobError::Json).into_future()),
         };
 

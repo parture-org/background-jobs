@@ -25,7 +25,7 @@ fn main() -> Result<(), Error> {
     dotenv::dotenv().ok();
     env_logger::init();
 
-    let mut worker = WorkerConfig::new("localhost".to_owned(), 5555, queue_map());
+    let mut worker = WorkerConfig::new((), "localhost".to_owned(), 5555, queue_map());
 
     worker.register_processor(MyProcessor);
 

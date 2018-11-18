@@ -24,13 +24,20 @@ use serde::{de::DeserializeOwned, ser::Serialize};
 use crate::{Backoff, MaxRetries};
 
 /// The Job trait defines parameters pertaining to an instance of background job
-pub trait Job: Serialize + DeserializeOwned {
+pub trait Job<S = ()>: Serialize + DeserializeOwned
+where
+    S: Clone + Send + Sync + 'static,
+{
     /// Users of this library must define what it means to run a job.
     ///
     /// This should contain all the logic needed to complete a job. If that means queuing more
     /// jobs, sending an email, shelling out (don't shell out), or doing otherwise lengthy
     /// processes, that logic should all be called from inside this method.
-    fn run(self) -> Box<dyn Future<Item = (), Error = Error> + Send>;
+    ///
+    /// The state passed into this job is initialized at the start of the application. The state
+    /// argument could be useful for containing a hook into something like r2d2, or the address of
+    /// an actor in an actix-based system.
+    fn run(self, state: S) -> Box<dyn Future<Item = (), Error = Error> + Send>;
 
     /// If this job should not use the default queue for its processor, this can be overridden in
     /// user-code.

@@ -123,7 +123,7 @@ struct MissingQueue(String);
 ///
 /// `ServerConfig` is used to spin up the infrastructure to manage queueing and storing jobs, but
 /// it does not provide functionality to execute jobs. For that, you must create a
-/// [`Worker`](https://docs.rs/background-jobs-server/0.2.0/background_jobs_server/struct.WorkerConfig.html)
+/// [`Worker`](https://docs.rs/background-jobs-server/0.3.0/background_jobs_server/struct.WorkerConfig.html)
 /// that will connect to the running server.
 ///
 /// This type doesn't have any associated data, but is used as a proxy for starting the

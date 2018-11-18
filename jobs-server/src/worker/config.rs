@@ -33,23 +33,29 @@ use tokio::timer::Delay;
 use tokio_zmq::{prelude::*, Multipart, Pull, Push};
 use zmq::{Context, Message};
 
-pub(crate) struct Worker {
+pub(crate) struct Worker<S>
+where
+    S: Clone,
+{
     pull: Pull,
     push: Push,
     push2: Push,
     push_address: String,
     pull_address: String,
     queue: String,
-    processors: Arc<ProcessorMap>,
+    processors: Arc<ProcessorMap<S>>,
     context: Arc<Context>,
 }
 
-impl Worker {
+impl<S> Worker<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
     pub(crate) fn init(
         push_address: String,
         pull_address: String,
         queue: String,
-        processors: Arc<ProcessorMap>,
+        processors: Arc<ProcessorMap<S>>,
         context: Arc<Context>,
     ) -> impl Future<Item = (), Error = ()> {
         let cfg = ResetWorker {
@@ -107,7 +113,7 @@ impl Worker {
         Box::new(fut)
     }
 
-    fn reset(&self) -> ResetWorker {
+    fn reset(&self) -> ResetWorker<S> {
         ResetWorker {
             push_address: self.push_address.clone(),
             pull_address: self.pull_address.clone(),
@@ -118,15 +124,21 @@ impl Worker {
     }
 }
 
-struct ResetWorker {
+struct ResetWorker<S>
+where
+    S: Clone,
+{
     push_address: String,
     pull_address: String,
     queue: String,
-    processors: Arc<ProcessorMap>,
+    processors: Arc<ProcessorMap<S>>,
     context: Arc<Context>,
 }
 
-impl ResetWorker {
+impl<S> ResetWorker<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
     fn rebuild(self) -> impl Future<Item = (), Error = ()> {
         let queue = self.queue.clone();
 
@@ -194,10 +206,13 @@ fn report_running(
         .map_err(|_| NotifyError.into())
 }
 
-fn process_job(
+fn process_job<S>(
     job: JobInfo,
-    processors: &ProcessorMap,
-) -> impl Future<Item = JobInfo, Error = Error> {
+    processors: &ProcessorMap<S>,
+) -> impl Future<Item = JobInfo, Error = Error>
+where
+    S: Clone + Send + Sync + 'static,
+{
     processors
         .process_job(job.clone())
         .map_err(|_| ProcessError)

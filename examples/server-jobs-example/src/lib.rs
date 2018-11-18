@@ -57,7 +57,7 @@ impl MyJob {
 }
 
 impl Job for MyJob {
-    fn run(self) -> Box<dyn Future<Item = (), Error = Error> + Send> {
+    fn run(self, _: ()) -> Box<dyn Future<Item = (), Error = Error> + Send> {
         info!("args: {:?}", self);
 
         Box::new(Ok(()).into_future())

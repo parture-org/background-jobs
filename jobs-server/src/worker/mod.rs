@@ -34,7 +34,7 @@ use self::{config::Worker, portmap::PortMap};
 ///
 /// A worker handles the processing of jobs, but not the queueing or storing of jobs. It connects
 /// to a server (crated with
-/// [`ServerConfig`](https://docs.rs/background-jobs-server/0.2.0/background_jobs_server/struct.ServerConfig.html))
+/// [`ServerConfig`](https://docs.rs/background-jobs-server/0.3.0/background_jobs_server/struct.ServerConfig.html))
 /// and receives work from there.
 ///
 /// ```rust
@@ -46,7 +46,7 @@ use self::{config::Worker, portmap::PortMap};
 ///     let mut queue_map = BTreeMap::new();
 ///     queue_map.insert("default".to_owned(), 10);
 ///
-///     let mut worker = WorkerConfig::new("localhost".to_owned(), 5555, queue_map);
+///     let mut worker = WorkerConfig::new((), "localhost".to_owned(), 5555, queue_map);
 ///
 ///     // Register a processor
 ///     // worker.register_processor(MyProcessor);
@@ -57,18 +57,27 @@ use self::{config::Worker, portmap::PortMap};
 ///     Ok(())
 /// }
 /// ```
-pub struct WorkerConfig {
-    processors: ProcessorMap,
+pub struct WorkerConfig<S>
+where
+    S: Clone,
+{
+    processors: ProcessorMap<S>,
     queues: BTreeMap<String, usize>,
     server_host: String,
     base_port: usize,
     context: Arc<Context>,
 }
 
-impl WorkerConfig {
+impl<S> WorkerConfig<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
     /// Create a new worker
     ///
-    /// This method takes three arguments
+    /// This method takes four arguments
+    ///  - The state passed into this method will be passed to all jobs executed on this Worker.
+    ///    The state argument could be useful for containing a hook into something like r2d2, or
+    ///    the address of an actor in an actix-based system.
     ///  - `server_host` is the hostname, or IP address, of the background-jobs server.
     ///  - `base_port` is the same value from the `ServerConfig` initialization. It dictates the
     ///    port the worker uses to return jobs to the server. The worker is guaranteed to connect
@@ -76,10 +85,15 @@ impl WorkerConfig {
     ///    `base_port` + n.
     ///  - queues is a mapping between the name of a queue, and the number of workers that should
     ///    be started to process jobs in that queue.
-    pub fn new(server_host: String, base_port: usize, queues: BTreeMap<String, usize>) -> Self {
+    pub fn new(
+        state: S,
+        server_host: String,
+        base_port: usize,
+        queues: BTreeMap<String, usize>,
+    ) -> Self {
         let context = Arc::new(Context::new());
 
-        Self::new_with_context(server_host, base_port, queues, context)
+        Self::new_with_context(state, server_host, base_port, queues, context)
     }
 
     /// The same as `WorkerConfig::new()`, but with a provided ZeroMQ Context.
@@ -90,13 +104,14 @@ impl WorkerConfig {
     /// If you're running the Server, Worker, and Spawner in the same application, you should share
     /// a ZeroMQ context between them.
     pub fn new_with_context(
+        state: S,
         server_host: String,
         base_port: usize,
         queues: BTreeMap<String, usize>,
         context: Arc<Context>,
     ) -> Self {
         WorkerConfig {
-            processors: ProcessorMap::new(),
+            processors: ProcessorMap::new(state),
             server_host,
             base_port,
             queues,
@@ -107,10 +122,10 @@ impl WorkerConfig {
     /// Register a processor with this worker
     ///
     /// For more information, see
-    /// [`Processor`](https://docs.rs/background-jobs/0.2.0/background_jobs/enum.Processor.html).
+    /// [`Processor`](https://docs.rs/background-jobs/0.3.0/background_jobs/enum.Processor.html).
     pub fn register_processor<P>(&mut self, processor: P)
     where
-        P: Processor + Send + Sync + 'static,
+        P: Processor<S> + Send + Sync + 'static,
     {
         self.processors.register_processor(processor);
     }
@@ -119,7 +134,10 @@ impl WorkerConfig {
     ///
     /// This method returns a future that, when run, spawns all of the worker's required futures
     /// onto tokio. Therefore, this can only be used from tokio.
-    pub fn run(self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+    pub fn run(self) -> Box<dyn Future<Item = (), Error = ()> + Send>
+    where
+        S: Send + Sync + 'static,
+    {
         let WorkerConfig {
             processors,
             server_host,
