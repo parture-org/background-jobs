@@ -9,7 +9,7 @@ might not be the best experience.
 #### Add Background Jobs to your project
 ```toml
 [dependencies]
-background-jobs = "0.2"
+background-jobs = "0.3"
 failure = "0.1"
 futures = "0.1"
 tokio = "0.1"
