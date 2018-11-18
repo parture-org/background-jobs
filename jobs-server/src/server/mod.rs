@@ -1,3 +1,22 @@
+/*
+ * This file is part of Background Jobs.
+ *
+ * Copyright © 2018 Riley Trautman
+ *
+ * Background Jobs is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Background Jobs is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
@@ -100,9 +119,55 @@ impl Config {
 #[fail(display = "Queue is missing from map, {}", _0)]
 struct MissingQueue(String);
 
+/// The entry point for creating a background-jobs server
+///
+/// `ServerConfig` is used to spin up the infrastructure to manage queueing and storing jobs, but
+/// it does not provide functionality to execute jobs. For that, you must create a
+/// [`Worker`](https://docs.rs/background-jobs-server/0.1.0/background_jobs_server/struct.WorkerConfig)
+/// that will connect to the running server.
+///
+/// This type doesn't have any associated data, but is used as a proxy for starting the
+/// background-jobs runtime.
+///
+/// ```rust
+/// use std::collections::BTreeSet;
+/// use background_jobs_server::ServerConfig;
+/// use failure::Error;
+///
+/// fn main() -> Result<(), Error> {
+///     let mut queue_set = BTreeSet::new();
+///     queue_set.insert("default".to_owned());
+///
+///     let start_server = ServerConfig::init(
+///         "127.0.0.1",
+///         5555,
+///         1,
+///         queue_set,
+///         "example-db",
+///     );
+///
+///     # let _ = start_server;
+///     // Comment out the start so we don't run the full server in doctests
+///     // tokio::run(start_server)
+///
+///     Ok(())
+/// }
+/// ```
 pub struct ServerConfig;
 
 impl ServerConfig {
+    /// Create a new background-jobs Server that binds to the provided `ip` with ports starting at
+    /// `base_port`.
+    ///
+    /// The smallest background-jobs server will bind to 3 ports. Each port serves a different
+    /// purpose:
+    ///  - `base_port` is the port that jobs are sent to the server on
+    ///  - `base_port` + 1 is the port that the server uses to advertise which queues are available
+    ///  - `base_port` + n is bound for an individual queue of jobs that the server pushes to
+    ///    workers.
+    ///
+    /// This method returns a future that, when run, spawns all of the server's required futures
+    /// onto tokio. Therefore, this can only be used from tokio.
     pub fn init<P: AsRef<Path>>(
         ip: &str,
         base_port: usize,
@@ -115,6 +180,13 @@ impl ServerConfig {
         Self::init_with_context(ip, base_port, runner_id, queues, db_path, context)
     }
 
+    /// The same as `ServerConfig::init()`, but with a provided ZeroMQ Context.
+    ///
+    /// This can be useful if you have other uses of ZeroMQ in your application, and want to share
+    /// a context with your dependencies.
+    ///
+    /// If you're running the Server, Worker, and Spawner in the same application, you should share
+    /// a ZeroMQ context between them.
     pub fn init_with_context<P: AsRef<Path>>(
         ip: &str,
         base_port: usize,

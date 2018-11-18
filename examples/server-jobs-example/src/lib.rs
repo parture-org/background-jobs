@@ -1,3 +1,22 @@
+/*
+ * This file is part of Background Jobs.
+ *
+ * Copyright © 2018 Riley Trautman
+ *
+ * Background Jobs is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Background Jobs is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -5,36 +24,43 @@ extern crate serde_derive;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use background_jobs::{Backoff, MaxRetries, Processor};
+use background_jobs::{Backoff, Job, MaxRetries, Processor};
 use failure::Error;
 use futures::{future::IntoFuture, Future};
 
+const DEFAULT_QUEUE: &'static str = "default";
+
 pub fn queue_map() -> BTreeMap<String, usize> {
     let mut map = BTreeMap::new();
-    map.insert("default".to_owned(), 18);
+    map.insert(DEFAULT_QUEUE.to_owned(), 18);
 
     map
 }
 
 pub fn queue_set() -> BTreeSet<String> {
-    let mut set = BTreeSet::new();
-    set.insert("default".to_owned());
-
-    set
+    queue_map().keys().cloned().collect()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct MyJobArguments {
+pub struct MyJob {
     some_usize: usize,
     other_usize: usize,
 }
 
-impl MyJobArguments {
+impl MyJob {
     pub fn new(some_usize: usize, other_usize: usize) -> Self {
-        MyJobArguments {
+        MyJob {
             some_usize,
             other_usize,
         }
+    }
+}
+
+impl Job for MyJob {
+    fn run(self) -> Box<dyn Future<Item = (), Error = Error> + Send> {
+        info!("args: {:?}", self);
+
+        Box::new(Ok(()).into_future())
     }
 }
 
@@ -42,14 +68,14 @@ impl MyJobArguments {
 pub struct MyProcessor;
 
 impl Processor for MyProcessor {
-    type Arguments = MyJobArguments;
+    type Job = MyJob;
 
     fn name() -> &'static str {
         "MyProcessor"
     }
 
     fn queue() -> &'static str {
-        "default"
+        DEFAULT_QUEUE
     }
 
     fn max_retries() -> MaxRetries {
@@ -58,11 +84,5 @@ impl Processor for MyProcessor {
 
     fn backoff_strategy() -> Backoff {
         Backoff::Exponential(2)
-    }
-
-    fn process(&self, args: Self::Arguments) -> Box<dyn Future<Item = (), Error = Error> + Send> {
-        info!("args: {:?}", args);
-
-        Box::new(Ok(()).into_future())
     }
 }

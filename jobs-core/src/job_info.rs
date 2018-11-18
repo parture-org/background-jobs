@@ -1,9 +1,34 @@
+/*
+ * This file is part of Background Jobs.
+ *
+ * Copyright © 2018 Riley Trautman
+ *
+ * Background Jobs is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Background Jobs is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 use chrono::{offset::Utc, DateTime, Duration as OldDuration};
 use serde_json::Value;
 
 use crate::{Backoff, JobStatus, MaxRetries, ShouldStop};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+/// Metadata pertaining to a job that exists within the background_jobs system
+///
+/// Although exposed publically, this type should only really be handled by the library itself, and
+/// is impossible to create outside of a
+/// [Processor](https://docs.rs/background-jobs/0.1.0/background_jobs/struct.Processor)'s new_job
+/// method.
 pub struct JobInfo {
     /// ID of the job, None means an ID has not been set
     id: Option<usize>,
@@ -126,7 +151,11 @@ impl JobInfo {
         self.status = JobStatus::Staged;
     }
 
-    pub fn run(&mut self) {
+    /// This method sets the Job's status to running
+    ///
+    /// Touching this outside of the background_jobs crates is dangerous, since these libraries
+    /// rely on the state of the job being correct.
+    pub fn set_running(&mut self) {
         self.status = JobStatus::Running;
     }
 

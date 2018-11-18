@@ -1,28 +1,107 @@
+/*
+ * This file is part of Background Jobs.
+ *
+ * Copyright © 2018 Riley Trautman
+ *
+ * Background Jobs is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Background Jobs is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 use failure::Error;
 use futures::{
     future::{Either, IntoFuture},
     Future,
 };
-use serde::{de::DeserializeOwned, ser::Serialize};
 use serde_json::Value;
 
-use crate::{Backoff, JobError, JobInfo, MaxRetries};
+use crate::{Backoff, Job, JobError, JobInfo, MaxRetries};
 
-/// The Processor trait
+/// ## The Processor trait
 ///
-/// Processors define the logic for executing jobs
+/// Processors define the logic spawning jobs such as
+///  - The job's name
+///  - The job's default queue
+///  - The job's default maximum number of retries
+///  - The job's [backoff
+///    strategy](https://docs.rs/background-jobs/0.1.0/background_jobs/struct.Backoff)
+///
+/// Processors also provide the default mechanism for running a job, and the only mechanism for
+/// creating a [JobInfo](https://docs.rs/background-jobs/0.1.0/background_jobs/struct.JobInfo),
+/// which is the type required for queuing jobs to be executed.
+///
+/// ### Example
+///
+/// ```rust
+/// use background_jobs_core::{Backoff, Job, MaxRetries, Processor};
+/// use failure::Error;
+/// use futures::future::{Future, IntoFuture};
+/// use log::info;
+/// use serde_derive::{Deserialize, Serialize};
+///
+/// #[derive(Deserialize, Serialize)]
+/// struct MyJob {
+///     count: i32,
+/// }
+///
+/// impl Job for MyJob {
+///     fn run(self) -> Box<dyn Future<Item = (), Error = Error> + Send> {
+///         info!("Processing {}", self.count);
+///
+///         Box::new(Ok(()).into_future())
+///     }
+/// }
+///
+/// #[derive(Clone)]
+/// struct MyProcessor;
+///
+/// impl Processor for MyProcessor {
+///     type Job = MyJob;
+///
+///     fn name() -> &'static str {
+///         "IncrementProcessor"
+///     }
+///
+///     fn queue() -> &'static str {
+///         "default"
+///     }
+///
+///     fn max_retries() -> MaxRetries {
+///         MaxRetries::Count(1)
+///     }
+///
+///     fn backoff_strategy() -> Backoff {
+///         Backoff::Exponential(2)
+///     }
+/// }
+///
+/// fn main() -> Result<(), Error> {
+///     let job = MyProcessor::new_job(MyJob { count: 1234 })?;
+///
+///     Ok(())
+/// }
+/// ```
 pub trait Processor: Clone {
-    type Arguments: Serialize + DeserializeOwned;
+    type Job: Job;
 
     /// The name of the processor
     ///
     /// This name must be unique!!! It is used to look up which processor should handle a job
     fn name() -> &'static str;
 
-    /// The name of the queue
+    /// The name of the default queue for jobs created with this processor
     ///
-    /// The queue determines which workers should process which jobs. By default, all workers
-    /// process all jobs, but that can be configured when starting the workers
+    /// This can be overridden on an individual-job level, but if a non-existant queue is supplied,
+    /// the job will never be processed.
     fn queue() -> &'static str;
 
     /// Define the default number of retries for a given processor
@@ -35,83 +114,59 @@ pub trait Processor: Clone {
     /// Jobs can override
     fn backoff_strategy() -> Backoff;
 
-    /// Defines how jobs for this processor are processed
+    /// A provided method to create a new JobInfo from provided arguments
     ///
-    /// Please do not perform blocking operations in the process method except if put behind
-    /// tokio's `blocking` abstraction
-    fn process(&self, args: Self::Arguments) -> Box<dyn Future<Item = (), Error = Error> + Send>;
+    /// This is required for spawning jobs, since it enforces the relationship between the job and
+    /// the Processor that should handle it.
+    fn new_job(job: Self::Job) -> Result<JobInfo, Error> {
+        let queue = job.queue().unwrap_or(Self::queue()).to_owned();
+        let max_retries = job.max_retries().unwrap_or(Self::max_retries());
+        let backoff_strategy = job.backoff_strategy().unwrap_or(Self::backoff_strategy());
 
-    /// A provided method to create a new Job from provided arguments
-    ///
-    /// ### Example
-    ///
-    /// ```rust
-    /// #[macro_use]
-    /// extern crate log;
-    ///
-    /// use jobs::{Processor, MaxRetries};
-    /// use failure::Error;
-    /// use futures::future::{Future, IntoFuture};
-    ///
-    /// struct MyProcessor;
-    ///
-    /// impl Processor for MyProcessor {
-    ///     type Arguments = i32;
-    ///
-    ///     fn name() -> &'static str {
-    ///         "IncrementProcessor"
-    ///     }
-    ///
-    ///     fn queue() -> &'static str {
-    ///         "default"
-    ///     }
-    ///
-    ///     fn max_retries() -> MaxRetries {
-    ///         MaxRetries::Count(1)
-    ///     }
-    ///
-    ///     fn backoff_strategy() -> Backoff {
-    ///         Backoff::Exponential(2)
-    ///     }
-    ///
-    ///     fn process(
-    ///         &self,
-    ///         args: Self::Arguments,
-    ///     ) -> Box<dyn Future<Item = (), Error = Error> + Send> {
-    ///         info!("Processing {}", args);
-    ///
-    ///         Box::new(Ok(()).into_future())
-    ///     }
-    /// }
-    ///
-    /// fn main() -> Result<(), Error> {
-    ///     let job = MyProcessor::new_job(1234, None)?;
-    ///
-    ///     Ok(())
-    /// }
-    /// ```
-    fn new_job(
-        args: Self::Arguments,
-        max_retries: Option<MaxRetries>,
-        backoff_strategy: Option<Backoff>,
-    ) -> Result<JobInfo, Error> {
         let job = JobInfo::new(
             Self::name().to_owned(),
-            Self::queue().to_owned(),
-            serde_json::to_value(args)?,
-            max_retries.unwrap_or(Self::max_retries()),
-            backoff_strategy.unwrap_or(Self::backoff_strategy()),
+            queue,
+            serde_json::to_value(job)?,
+            max_retries,
+            backoff_strategy,
         );
 
         Ok(job)
     }
 
-    /// A provided method to coerce arguments into the expected type
-    fn do_processing(&self, args: Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
-        let res = serde_json::from_value::<Self::Arguments>(args);
+    /// A provided method to coerce arguments into the expected type and run the job
+    ///
+    /// Advanced users may want to override this method in order to provide their own custom
+    /// before/after logic for certain job processors
+    ///
+    /// ```rust,ignore
+    /// fn process(&self, args: Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
+    ///     let res = serde_json::from_value::<Self::Job>(args);
+    ///
+    ///     let fut = match res {
+    ///         Ok(job) => {
+    ///             // Perform some custom pre-job logic
+    ///             Either::A(job.run().map_err(JobError::Processing))
+    ///         },
+    ///         Err(_) => Either::B(Err(JobError::Json).into_future()),
+    ///     };
+    ///
+    ///     Box::new(fut.and_then(|_| {
+    ///         // Perform some custom post-job logic
+    ///     }))
+    /// }
+    /// ```
+    ///
+    /// Patterns like this could be useful if you want to use the same job type for multiple
+    /// scenarios. Defining the `process` method for multiple `Processor`s with different
+    /// before/after logic for the same
+    /// [`Job`](https://docs.rs/background-jobs/0.1.0/background_jobs/struct.Job) type is
+    /// supported.
+    fn process(&self, args: Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
+        let res = serde_json::from_value::<Self::Job>(args);
 
         let fut = match res {
-            Ok(item) => Either::A(self.process(item).map_err(JobError::Processing)),
+            Ok(job) => Either::A(job.run().map_err(JobError::Processing)),
             Err(_) => Either::B(Err(JobError::Json).into_future()),
         };
 

@@ -1,6 +1,25 @@
+/*
+ * This file is part of Background Jobs.
+ *
+ * Copyright © 2018 Riley Trautman
+ *
+ * Background Jobs is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Background Jobs is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 use std::{sync::Arc, time::Duration};
 
-use background_jobs_core::{JobInfo, Processors};
+use background_jobs_core::{JobInfo, ProcessorMap};
 use failure::{Error, Fail};
 use futures::{
     sync::mpsc::{channel, Sender},
@@ -21,7 +40,7 @@ pub(crate) struct Worker {
     push_address: String,
     pull_address: String,
     queue: String,
-    processors: Arc<Processors>,
+    processors: Arc<ProcessorMap>,
     context: Arc<Context>,
 }
 
@@ -30,7 +49,7 @@ impl Worker {
         push_address: String,
         pull_address: String,
         queue: String,
-        processors: Arc<Processors>,
+        processors: Arc<ProcessorMap>,
         context: Arc<Context>,
     ) -> impl Future<Item = (), Error = ()> {
         let cfg = ResetWorker {
@@ -103,7 +122,7 @@ struct ResetWorker {
     push_address: String,
     pull_address: String,
     queue: String,
-    processors: Arc<Processors>,
+    processors: Arc<ProcessorMap>,
     context: Arc<Context>,
 }
 
@@ -168,7 +187,7 @@ fn report_running(
     mut job: JobInfo,
     push: Sender<JobInfo>,
 ) -> impl Future<Item = JobInfo, Error = Error> {
-    job.run();
+    job.set_running();
 
     push.send(job.clone())
         .map(move |_| job)
@@ -177,7 +196,7 @@ fn report_running(
 
 fn process_job(
     job: JobInfo,
-    processors: &Processors,
+    processors: &ProcessorMap,
 ) -> impl Future<Item = JobInfo, Error = Error> {
     processors
         .process_job(job.clone())
