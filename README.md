@@ -51,7 +51,7 @@ else.
 
 Let's re-define the job to care about some application state.
 
-```rust,ignore
+```rust
 #[derive(Clone, Debug)]
 pub struct MyState {
     pub app_name: String,
