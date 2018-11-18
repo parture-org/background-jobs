@@ -80,7 +80,7 @@ impl SpawnerConfig {
     {
         let msg = P::new_job(job)
             .map_err(Error::from)
-            .and_then(|job| serde_json::to_string(&job).map_err(Error::from))
+            .and_then(|job_info| serde_json::to_string(&job_info).map_err(Error::from))
             .and_then(|s| {
                 Message::from_slice(s.as_ref())
                     .map(|m| m.into())
@@ -99,5 +99,30 @@ impl SpawnerConfig {
                 trace!("Sending");
                 push.send(msg).from_err().map(|_| trace!("sent"))
             })
+    }
+
+    /// `queue_sync` is the same as Queue, except that it blocks the current thread while it is
+    /// sending the message to the jobs server.
+    ///
+    /// If you have a tokio-based application, you should use `queue` instead.
+    pub fn queue_sync<P>(&self, job: P::Job) -> Result<(), Error>
+    where
+        P: Processor,
+    {
+        use zmq::PUSH;
+
+        let job_info = P::new_job(job)?;
+
+        let msg_string = serde_json::to_string(&job_info)?;
+
+        let msg = Message::from_slice(msg_string.as_ref())?;
+
+        let socket = self.ctx.socket(PUSH)?;
+        socket.connect(&self.server)?;
+        trace!("Sending");
+        socket.send_msg(msg, 0)?;
+        trace!("Sent");
+
+        Ok(())
     }
 }

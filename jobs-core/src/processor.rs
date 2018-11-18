@@ -33,10 +33,11 @@ use crate::{Backoff, Job, JobError, JobInfo, MaxRetries};
 ///  - The job's default queue
 ///  - The job's default maximum number of retries
 ///  - The job's [backoff
-///    strategy](https://docs.rs/background-jobs/0.1.1/background_jobs/struct.Backoff)
+///    strategy](https://docs.rs/background-jobs/0.2.0/background_jobs/enum.Backoff.html)
 ///
 /// Processors also provide the default mechanism for running a job, and the only mechanism for
-/// creating a [JobInfo](https://docs.rs/background-jobs/0.1.1/background_jobs/struct.JobInfo),
+/// creating a
+/// [JobInfo](https://docs.rs/background-jobs-core/0.2.0/background_jobs_core/struct.JobInfo.html),
 /// which is the type required for queuing jobs to be executed.
 ///
 /// ### Example
@@ -67,21 +68,10 @@ use crate::{Backoff, Job, JobError, JobInfo, MaxRetries};
 /// impl Processor for MyProcessor {
 ///     type Job = MyJob;
 ///
-///     fn name() -> &'static str {
-///         "IncrementProcessor"
-///     }
-///
-///     fn queue() -> &'static str {
-///         "default"
-///     }
-///
-///     fn max_retries() -> MaxRetries {
-///         MaxRetries::Count(1)
-///     }
-///
-///     fn backoff_strategy() -> Backoff {
-///         Backoff::Exponential(2)
-///     }
+///     const NAME: &'static str = "IncrementProcessor";
+///     const QUEUE: &'static str = "default";
+///     const MAX_RETRIES: MaxRetries = MaxRetries::Count(1);
+///     const BACKOFF_STRATEGY: Backoff = Backoff::Exponential(2);
 /// }
 ///
 /// fn main() -> Result<(), Error> {
@@ -96,35 +86,35 @@ pub trait Processor: Clone {
     /// The name of the processor
     ///
     /// This name must be unique!!! It is used to look up which processor should handle a job
-    fn name() -> &'static str;
+    const NAME: &'static str;
 
     /// The name of the default queue for jobs created with this processor
     ///
     /// This can be overridden on an individual-job level, but if a non-existant queue is supplied,
     /// the job will never be processed.
-    fn queue() -> &'static str;
+    const QUEUE: &'static str;
 
     /// Define the default number of retries for a given processor
     ///
     /// Jobs can override
-    fn max_retries() -> MaxRetries;
+    const MAX_RETRIES: MaxRetries;
 
     /// Define the default backoff strategy for a given processor
     ///
     /// Jobs can override
-    fn backoff_strategy() -> Backoff;
+    const BACKOFF_STRATEGY: Backoff;
 
     /// A provided method to create a new JobInfo from provided arguments
     ///
     /// This is required for spawning jobs, since it enforces the relationship between the job and
     /// the Processor that should handle it.
     fn new_job(job: Self::Job) -> Result<JobInfo, Error> {
-        let queue = job.queue().unwrap_or(Self::queue()).to_owned();
-        let max_retries = job.max_retries().unwrap_or(Self::max_retries());
-        let backoff_strategy = job.backoff_strategy().unwrap_or(Self::backoff_strategy());
+        let queue = job.queue().unwrap_or(Self::QUEUE).to_owned();
+        let max_retries = job.max_retries().unwrap_or(Self::MAX_RETRIES);
+        let backoff_strategy = job.backoff_strategy().unwrap_or(Self::BACKOFF_STRATEGY);
 
         let job = JobInfo::new(
-            Self::name().to_owned(),
+            Self::NAME.to_owned(),
             queue,
             serde_json::to_value(job)?,
             max_retries,
@@ -160,7 +150,7 @@ pub trait Processor: Clone {
     /// Patterns like this could be useful if you want to use the same job type for multiple
     /// scenarios. Defining the `process` method for multiple `Processor`s with different
     /// before/after logic for the same
-    /// [`Job`](https://docs.rs/background-jobs/0.1.1/background_jobs/struct.Job) type is
+    /// [`Job`](https://docs.rs/background-jobs/0.2.0/background_jobs/trait.Job.html) type is
     /// supported.
     fn process(&self, args: Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
         let res = serde_json::from_value::<Self::Job>(args);

@@ -70,19 +70,8 @@ pub struct MyProcessor;
 impl Processor for MyProcessor {
     type Job = MyJob;
 
-    fn name() -> &'static str {
-        "MyProcessor"
-    }
-
-    fn queue() -> &'static str {
-        DEFAULT_QUEUE
-    }
-
-    fn max_retries() -> MaxRetries {
-        MaxRetries::Count(1)
-    }
-
-    fn backoff_strategy() -> Backoff {
-        Backoff::Exponential(2)
-    }
+    const NAME: &'static str = "MyProcessor";
+    const QUEUE: &'static str = DEFAULT_QUEUE;
+    const MAX_RETRIES: MaxRetries = MaxRetries::Count(1);
+    const BACKOFF_STRATEGY: Backoff = Backoff::Exponential(2);
 }

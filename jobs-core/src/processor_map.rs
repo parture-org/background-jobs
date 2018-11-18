@@ -27,17 +27,17 @@ use crate::{JobError, JobInfo, Processor};
 /// A generic function that processes a job
 ///
 /// Instead of storing
-/// [`Processor`](https://docs.rs/background-jobs/0.1.1/background_jobs/struct.Processor) type
+/// [`Processor`](https://docs.rs/background-jobs/0.2.0/background_jobs/trait.Processor.html) type
 /// directly, the
-/// [`ProcessorMap`](https://docs.rs/background-jobs/0.1.1/background_jobs/struct.ProcessorMap)
+/// [`ProcessorMap`](https://docs.rs/background-jobs-core/0.2.0/background_jobs_core/struct.ProcessorMap.html)
 /// struct stores these `ProcessFn` types that don't expose differences in Job types.
 pub type ProcessFn =
     Box<dyn Fn(Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send + Sync>;
 
 /// A type for storing the relationships between processor names and the processor itself
 ///
-/// [`Processor`s](https://docs.rs/background-jobs/0.1.1/background_jobs/struct.Processor) must be
-/// registered with  the `ProcessorMap` in the initialization phase of an application before
+/// [`Processor`s](https://docs.rs/background-jobs/0.2.0/background_jobs/trait.Processor.html) must
+/// be registered with  the `ProcessorMap` in the initialization phase of an application before
 /// workers are spawned in order to handle queued jobs.
 pub struct ProcessorMap {
     inner: HashMap<String, ProcessFn>,
@@ -50,7 +50,7 @@ impl ProcessorMap {
     }
 
     /// Register a
-    /// [`Processor`](https://docs.rs/background-jobs/0.1.1/background_jobs/struct.Processor) with
+    /// [`Processor`](https://docs.rs/background-jobs/0.2.0/background_jobs/trait.Processor.html) with
     /// this `ProcessorMap`.
     ///
     /// `ProcessorMap`s are useless if no processors are registerd before workers are spawned, so
@@ -60,7 +60,7 @@ impl ProcessorMap {
         P: Processor + Send + Sync + 'static,
     {
         self.inner.insert(
-            P::name().to_owned(),
+            P::NAME.to_owned(),
             Box::new(move |value| processor.process(value)),
         );
     }

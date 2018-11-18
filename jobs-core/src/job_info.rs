@@ -27,8 +27,8 @@ use crate::{Backoff, JobStatus, MaxRetries, ShouldStop};
 ///
 /// Although exposed publically, this type should only really be handled by the library itself, and
 /// is impossible to create outside of a
-/// [Processor](https://docs.rs/background-jobs/0.1.1/background_jobs/struct.Processor)'s new_job
-/// method.
+/// [Processor](https://docs.rs/background-jobs/0.2.0/background_jobs/trait.Processor.html)'s
+/// new_job method.
 pub struct JobInfo {
     /// ID of the job, None means an ID has not been set
     id: Option<usize>,

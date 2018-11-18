@@ -28,7 +28,7 @@
 //! #### Add Background Jobs to your project
 //! ```toml
 //! [dependencies]
-//! background-jobs = "0.1"
+//! background-jobs = "0.2"
 //! failure = "0.1"
 //! futures = "0.1"
 //! tokio = "0.1"
@@ -77,9 +77,7 @@
 //!     // The name of the processor. It is super important that each processor has a unique name,
 //!     // because otherwise one processor will overwrite another processor when they're being
 //!     // registered.
-//!     fn name() -> &'static str {
-//!         "MyProcessor"
-//!     }
+//!     const NAME: &'static str = "IncrementProcessor";
 //!
 //!     // The queue that this processor belongs to
 //!     //
@@ -87,23 +85,17 @@
 //!     // determine which worker will call the processor
 //!     //
 //!     // Jobs can optionally override the queue they're spawned on
-//!     fn queue() -> &'static str {
-//!         DEFAULT_QUEUE
-//!     }
+//!     const QUEUE: &'static str = "default";
 //!
 //!     // The number of times background-jobs should try to retry a job before giving up
 //!     //
 //!     // Jobs can optionally override this value
-//!     fn max_retries() -> MaxRetries {
-//!         MaxRetries::Count(1)
-//!     }
+//!     const MAX_RETRIES: MaxRetries = MaxRetries::Count(1);
 //!
 //!     // The logic to determine how often to retry this job if it fails
 //!     //
 //!     // Jobs can optionally override this value
-//!     fn backoff_strategy() -> Backoff {
-//!         Backoff::Exponential(2)
-//!     }
+//!     const BACKOFF_STRATEGY: Backoff = Backoff::Exponential(2);
 //! }
 //! ```
 //!
@@ -111,6 +103,19 @@
 //! By default, this crate ships with the `background-jobs-server` feature enabled. This uses the
 //! `background-jobs-server` crate to spin up a Server and Workers, and provides a mechanism for
 //! spawning new jobs.
+//!
+//! `background-jobs-server` uses LMDB to keep track of local state. LMDB is a memory-mapped
+//! storage mechanism, so the jobs information it keeps track of is all stored locally on-disk. In
+//! the future, the storage mechanism may be made generic so implementors can bring their own
+//! storage.
+//!
+//! `background-jobs-server` also uses ZeroMQ to transfer data between the spawner, server, and
+//! workers. If you plan to run two or more of these pieces from the same process, look at the
+//! documentation for the methods `new_with_context` and `init_with_context`. It is important that
+//! ZeroMQ contexts are shared when possible to avoid spinning up multiple ZeroMQ instances for the
+//! same application.
+//!
+//! With that out of the way, back to the examples:
 //!
 //! ##### Starting the job server
 //! ```rust,ignore
@@ -178,9 +183,31 @@
 //! }
 //! ```
 //!
+//! ##### Complete Example
+//! For the complete example project, see
+//! [the examples folder](https://git.asonix.dog/asonix/background-jobs/src/branch/master/examples/server-jobs-example)
+//!
+//! #### Using on Windows
+//! `background-jobs-server` depends by default on
+//! [`tokio-zmq`](https://crates.io/crates/tokio-zmq), which only works on unix (and unix-like)
+//! systems. This might mean it works on the Windows Subsystem for Linux, but it's untested and
+//! hard to say. You can override this behavior by specifying the following in your Cargo.toml
+//! ```toml
+//! [Dependencies.background-jobs]
+//! version = "0.1"
+//! default-features = false
+//! features = ["background-jobs-server", "background-jobs-server/futures-zmq"]
+//! ```
+//!
+//! [`futures-zmq`](https://crates.io/crates/futures-zmq) Is designed to be a drop-in replacement
+//! for tokio-zmq that works on non-unix and non-tokio platforms. The reason why it isn't enabled
+//! by default is that it's slower than tokio-zmq, and in all likelihood, the production
+//! environment for projects depending on this one will be linux.
+//!
+//! #### Not using a ZeroMQ+LMDB based client/server model
 //! If you want to create your own jobs processor based on this idea, you can depend on the
-//! `background-jobs-core` crate, which provides the LMDB storage, Processor and Job traits, as well as some
-//! other useful types for implementing a jobs processor.
+//! `background-jobs-core` crate, which provides the LMDB storage, Processor and Job traits, as
+//! well as some other useful types for implementing a jobs processor.
 
 pub use background_jobs_core::{Backoff, Job, MaxRetries, Processor};
 
