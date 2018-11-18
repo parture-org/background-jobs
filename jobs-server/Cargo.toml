@@ -1,7 +1,11 @@
 [package]
 name = "background-jobs-server"
+description = "Jobs processor server based on ZeroMQ"
 version = "0.1.0"
+license = "GPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
+repository = "https://git.asonix.dog/asonix/background-jobs"
+keywords = ["jobs", "background jobs"]
 edition = "2018"
 
 [dependencies]
