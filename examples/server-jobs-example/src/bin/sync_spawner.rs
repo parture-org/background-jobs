@@ -34,7 +34,7 @@ fn main() -> Result<(), Error> {
     let spawner = SpawnerConfig::new("localhost", 5555);
 
     for job in jobs {
-        spawner.queue_sync::<MyProcessor>(job)?;
+        spawner.queue_sync::<MyProcessor, _>(job)?;
     }
 
     Ok(())

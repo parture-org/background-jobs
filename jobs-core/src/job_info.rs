@@ -128,6 +128,10 @@ impl JobInfo {
         self.next_queue = Some(next_queue);
     }
 
+    pub(crate) fn schedule(&mut self, time: DateTime<Utc>) {
+        self.next_queue = Some(time);
+    }
+
     pub(crate) fn is_stale(&self) -> bool {
         self.updated_at < Utc::now() - OldDuration::days(1)
     }

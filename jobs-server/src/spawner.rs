@@ -74,9 +74,10 @@ impl SpawnerConfig {
     }
 
     /// Queue a job to be executed in the background
-    pub fn queue<P>(&self, job: P::Job) -> impl Future<Item = (), Error = Error>
+    pub fn queue<P, S>(&self, job: P::Job) -> impl Future<Item = (), Error = Error>
     where
-        P: Processor,
+        P: Processor<S>,
+        S: Clone + Send + Sync + 'static,
     {
         let msg = P::new_job(job)
             .map_err(Error::from)
@@ -105,9 +106,10 @@ impl SpawnerConfig {
     /// sending the message to the jobs server.
     ///
     /// If you have a tokio-based application, you should use `queue` instead.
-    pub fn queue_sync<P>(&self, job: P::Job) -> Result<(), Error>
+    pub fn queue_sync<P, S>(&self, job: P::Job) -> Result<(), Error>
     where
-        P: Processor,
+        P: Processor<S>,
+        S: Clone + Send + Sync + 'static,
     {
         use zmq::PUSH;
 

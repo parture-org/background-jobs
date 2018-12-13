@@ -17,6 +17,7 @@
  * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use chrono::{offset::Utc, DateTime};
 use failure::Error;
 use futures::{
     future::{Either, IntoFuture},
@@ -123,6 +124,14 @@ where
             max_retries,
             backoff_strategy,
         );
+
+        Ok(job)
+    }
+
+    /// Create a JobInfo to schedule a job to be performed after a certain time
+    fn new_scheduled_job(job: Self::Job, after: DateTime<Utc>) -> Result<JobInfo, Error> {
+        let mut job = Self::new_job(job)?;
+        job.schedule(after);
 
         Ok(job)
     }

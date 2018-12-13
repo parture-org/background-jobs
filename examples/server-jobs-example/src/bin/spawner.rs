@@ -35,7 +35,7 @@ fn main() {
 
     tokio::run(lazy(move || {
         for job in jobs {
-            tokio::spawn(spawner.queue::<MyProcessor>(job).map_err(|_| ()));
+            tokio::spawn(spawner.queue::<MyProcessor, _>(job).map_err(|_| ()));
         }
 
         Ok(())
