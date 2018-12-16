@@ -34,11 +34,11 @@ use crate::{Backoff, Job, JobError, MaxRetries, NewJobInfo};
 ///  - The job's default queue
 ///  - The job's default maximum number of retries
 ///  - The job's [backoff
-///    strategy](https://docs.rs/background-jobs/0.3.0/background_jobs/enum.Backoff.html)
+///    strategy](https://docs.rs/background-jobs/0.4.0/background_jobs/enum.Backoff.html)
 ///
 /// Processors also provide the default mechanism for running a job, and the only mechanism for
 /// creating a
-/// [JobInfo](https://docs.rs/background-jobs-core/0.3.0/background_jobs_core/struct.JobInfo.html),
+/// [JobInfo](https://docs.rs/background-jobs-core/0.4.0/background_jobs_core/struct.JobInfo.html),
 /// which is the type required for queuing jobs to be executed.
 ///
 /// ### Example
@@ -170,7 +170,7 @@ where
     /// Patterns like this could be useful if you want to use the same job type for multiple
     /// scenarios. Defining the `process` method for multiple `Processor`s with different
     /// before/after logic for the same
-    /// [`Job`](https://docs.rs/background-jobs/0.3.0/background_jobs/trait.Job.html) type is
+    /// [`Job`](https://docs.rs/background-jobs/0.4.0/background_jobs/trait.Job.html) type is
     /// supported.
     fn process(
         &self,

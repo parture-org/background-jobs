@@ -9,7 +9,7 @@ might not be the best experience.
 #### Add Background Jobs to your project
 ```toml
 [dependencies]
-background-jobs = "0.3"
+background-jobs = "0.4"
 failure = "0.1"
 futures = "0.1"
 tokio = "0.1"
@@ -129,9 +129,9 @@ use server_jobs_example::queue_set;
 fn main() -> Result<(), Error> {
     // Run our job server
     tokio::run(ServerConfig::init(
+        1,
         "127.0.0.1",
         5555,
-        1,
         queue_set(),
         "example-db",
     ));
@@ -211,7 +211,7 @@ fn main() -> Result<(), Error> {
 
     // Queue each job
     for job in jobs {
-        spawner.queue_sync::<MyProcessor>(job)?
+        spawner.queue_sync::<MyProcessor, _>(job)?
     }
 }
 ```
@@ -226,9 +226,9 @@ but it's untested and hard to say. You can override this behavior by specifying 
 Cargo.toml
 ```toml
 [Dependencies.background-jobs]
-version = "0.1"
+version = "0.4"
 default-features = false
-features = ["background-jobs-server", "background-jobs-server/futures-zmq"]
+features = ["no_unix"]
 ```
 
 [`futures-zmq`](https://crates.io/crates/futures-zmq) Is designed to be a drop-in replacement for
@@ -236,7 +236,42 @@ tokio-zmq that works on non-unix and non-tokio platforms. The reason why it isn'
 that it's slower than tokio-zmq, and in all likelihood, the production environment for projects
 depending on this one will be linux.
 
-#### Not using a ZeroMQ+LMDB based client/server model
+#### Actix
+Another implementation of a jobs processor is also provided by this library under a feature flag.
+```toml
+[dependencies.background-jobs]
+version = "0.4"
+default-features = false
+features = ["actix"]
+```
+
+This provides an in-process implementation of a jobs server and worker setup. Here's some example usage.
+```rust
+use background_jobs::{Processor, ServerConfig, WorkerConfig};
+
+let sys = actix::System::new("my-actix-thing");
+
+let queue_handle = ServerConfig::new(1, db_path.into()).start::<MyState>();
+
+let state = MyState {
+    queue_handle: queue_handle.clone(),
+};
+
+let mut worker_config = WorkerConfig::new(state);
+WorkerConfig::register(&mut worker_config, FetchProcessor);
+WorkerConfig::register(&mut worker_config, InstanceProcessor);
+WorkerConfig::register(&mut worker_config, OpenProcessor);
+WorkerConfig::set_processor_count(
+    &mut worker_config,
+    <InstanceProcessor as Processor<MyState>>::QUEUE,
+    16,
+);
+WorkerConfig::start(worker_config, queue_handle.clone());
+
+let _ = sys.run();
+```
+
+#### Bringing your own server/worker implementation
 If you want to create your own jobs processor based on this idea, you can depend on the
 `background-jobs-core` crate, which provides the LMDB storage, Processor and Job traits, as well as some
 other useful types for implementing a jobs processor.

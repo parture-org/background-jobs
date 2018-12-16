@@ -34,7 +34,7 @@ use self::{config::Worker, portmap::PortMap};
 ///
 /// A worker handles the processing of jobs, but not the queueing or storing of jobs. It connects
 /// to a server (crated with
-/// [`ServerConfig`](https://docs.rs/background-jobs-server/0.3.0/background_jobs_server/struct.ServerConfig.html))
+/// [`ServerConfig`](https://docs.rs/background-jobs-server/0.4.0/background_jobs_server/struct.ServerConfig.html))
 /// and receives work from there.
 ///
 /// ```rust
@@ -122,7 +122,7 @@ where
     /// Register a processor with this worker
     ///
     /// For more information, see
-    /// [`Processor`](https://docs.rs/background-jobs/0.3.0/background_jobs/enum.Processor.html).
+    /// [`Processor`](https://docs.rs/background-jobs/0.4.0/background_jobs/enum.Processor.html).
     pub fn register_processor<P>(&mut self, processor: P)
     where
         P: Processor<S> + Send + Sync + 'static,

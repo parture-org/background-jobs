@@ -46,7 +46,7 @@ where
 ///
 /// This trait should be implemented sparingly, but is provided so that synchronous tasks may be
 /// executed. If you have the ability to implement the
-/// [`Job`](https://docs.rs/background-jobs/0.3.0/background_jobs/trait.Job.html) trait directly,
+/// [`Job`](https://docs.rs/background-jobs/0.4.0/background_jobs/trait.Job.html) trait directly,
 /// you should.
 ///
 /// ### Example

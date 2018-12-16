@@ -28,16 +28,16 @@ use crate::{JobError, JobInfo, Processor};
 /// A generic function that processes a job
 ///
 /// Instead of storing
-/// [`Processor`](https://docs.rs/background-jobs/0.3.0/background_jobs/trait.Processor.html) type
+/// [`Processor`](https://docs.rs/background-jobs/0.4.0/background_jobs/trait.Processor.html) type
 /// directly, the
-/// [`ProcessorMap`](https://docs.rs/background-jobs-core/0.3.0/background_jobs_core/struct.ProcessorMap.html)
+/// [`ProcessorMap`](https://docs.rs/background-jobs-core/0.4.0/background_jobs_core/struct.ProcessorMap.html)
 /// struct stores these `ProcessFn` types that don't expose differences in Job types.
 pub type ProcessFn =
     Box<dyn Fn(Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send + Sync>;
 
 /// A type for storing the relationships between processor names and the processor itself
 ///
-/// [`Processor`s](https://docs.rs/background-jobs/0.3.0/background_jobs/trait.Processor.html) must
+/// [`Processor`s](https://docs.rs/background-jobs/0.4.0/background_jobs/trait.Processor.html) must
 /// be registered with  the `ProcessorMap` in the initialization phase of an application before
 /// workers are spawned in order to handle queued jobs.
 pub struct ProcessorMap<S>
@@ -65,7 +65,7 @@ where
     }
 
     /// Register a
-    /// [`Processor`](https://docs.rs/background-jobs/0.3.0/background_jobs/trait.Processor.html) with
+    /// [`Processor`](https://docs.rs/background-jobs/0.4.0/background_jobs/trait.Processor.html) with
     /// this `ProcessorMap`.
     ///
     /// `ProcessorMap`s are useless if no processors are registerd before workers are spawned, so

@@ -38,7 +38,7 @@ use zmq::{Context, Message};
 ///
 /// tokio::spawn(
 ///     spawner
-///         .queue::<MyProcessor>(job)
+///         .queue::<MyProcessor, _>(job)
 ///         .map_err(|_| ()),
 /// );
 /// ```
