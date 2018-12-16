@@ -36,8 +36,8 @@ use crate::server::{coerce, Config};
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 enum EitherJob {
-    New(NewJobInfo),
     Existing(JobInfo),
+    New(NewJobInfo),
 }
 
 pub(crate) struct PullConfig {
@@ -134,6 +134,16 @@ fn store_job(
                 EitherJob::New(new_job) => storage.assign_id(new_job, server_id)?,
                 EitherJob::Existing(job) => job,
             };
+
+            if job.is_pending() {
+                info!("Storing pending job, {}", job.id());
+            }
+            if job.is_finished() {
+                info!("Finished job {}", job.id());
+            }
+            if job.is_failed() {
+                info!("Job failed {}", job.id());
+            }
 
             storage.store_job(job, server_id).map_err(Error::from)
         })

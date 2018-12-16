@@ -184,10 +184,6 @@ impl JobInfo {
         }
     }
 
-    pub(crate) fn is_failed(&self) -> bool {
-        self.status == JobStatus::Failed
-    }
-
     pub fn needs_retry(&mut self) -> bool {
         let should_retry = self.is_failed() && self.increment().should_requeue();
 
@@ -205,6 +201,14 @@ impl JobInfo {
 
     pub fn is_pending(&self) -> bool {
         self.status == JobStatus::Pending
+    }
+
+    pub fn is_failed(&self) -> bool {
+        self.status == JobStatus::Failed
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.status == JobStatus::Finished
     }
 
     pub(crate) fn is_in_queue(&self, queue: &str) -> bool {

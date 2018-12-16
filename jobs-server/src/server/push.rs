@@ -151,7 +151,7 @@ fn fetch_queue(
     server_id: usize,
 ) -> Result<Vec<JobInfo>, Error> {
     storage
-        .stage_jobs(100, queue, server_id)
+        .stage_jobs(10, queue, server_id)
         .map_err(Error::from)
 }
 

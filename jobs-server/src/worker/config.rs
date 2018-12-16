@@ -39,7 +39,6 @@ where
 {
     pull: Pull,
     push: Push,
-    push2: Push,
     push_address: String,
     pull_address: String,
     queue: String,
@@ -75,7 +74,6 @@ where
 
         let Worker {
             push,
-            push2,
             pull,
             push_address: _,
             pull_address: _,
@@ -85,12 +83,13 @@ where
         } = self;
 
         let (tx, rx) = channel(5);
+        let tx2 = tx.clone();
 
         tokio::spawn(
             rx.map_err(|_| RecvError)
                 .from_err::<Error>()
                 .and_then(serialize_request)
-                .forward(push2.sink(1))
+                .forward(push.sink(1))
                 .map(|_| ())
                 .or_else(|_| Ok(())),
         );
@@ -101,8 +100,7 @@ where
             .and_then(parse_multipart)
             .and_then(move |job| report_running(job, tx.clone()))
             .and_then(move |job| process_job(job, &processors))
-            .and_then(serialize_request)
-            .forward(push.sink(1))
+            .forward(tx2)
             .map(move |_| info!("worker for queue {} is shutting down", queue))
             .map_err(|e| {
                 error!("Error processing job, {}", e);
@@ -153,19 +151,13 @@ where
             .connect(&self.push_address)
             .build()
             .join(
-                Push::builder(self.context.clone())
-                    .connect(&self.push_address)
-                    .build(),
-            )
-            .join(
                 Pull::builder(self.context.clone())
                     .connect(&self.pull_address)
                     .build(),
             )
-            .map(|((push, push2), pull)| {
+            .map(|(push, pull)| {
                 let config = Worker {
                     push,
-                    push2,
                     pull,
                     push_address: self.push_address,
                     pull_address: self.pull_address,
