@@ -29,6 +29,7 @@ path = "jobs-core"
 [dependencies.background-jobs-server]
 version = "0.4"
 path = "jobs-server"
+default-features = false
 optional = true
 
 [dependencies.background-jobs-actix]

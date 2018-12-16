@@ -20,7 +20,7 @@ tokio-threadpool = "0.1"
 zmq = "0.8"
 
 [features]
-default = []
+default = ["tokio-zmq"]
 
 [dependencies.background-jobs-core]
 version = "0.4"
