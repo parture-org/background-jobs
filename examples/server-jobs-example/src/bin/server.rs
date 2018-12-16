@@ -26,9 +26,9 @@ fn main() -> Result<(), Error> {
     env_logger::init();
 
     tokio::run(ServerConfig::init(
+        1,
         "127.0.0.1",
         5555,
-        1,
         queue_set(),
         "example-db",
     ));

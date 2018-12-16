@@ -41,9 +41,9 @@ use self::{portmap::PortMapConfig, pull::PullConfig, push::PushConfig, stalled::
 
 #[derive(Clone)]
 pub(crate) struct Config {
+    server_id: usize,
     ip: String,
     base_port: usize,
-    runner_id: usize,
     queues: BTreeSet<String>,
     db_path: PathBuf,
     context: Arc<Context>,
@@ -51,31 +51,30 @@ pub(crate) struct Config {
 
 impl Config {
     fn create_server(&self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        let runner_id = self.runner_id;
         let db_path = self.db_path.clone();
         let base_port = self.base_port;
         let queues = self.queues.clone();
+        let server_id = self.server_id;
 
         let config = Arc::new(self.clone());
 
         let fut = poll_fn(move || {
-            let runner_id = runner_id;
             let db_path = db_path.clone();
             let base_port = base_port;
             let queues = queues.clone();
 
             blocking(move || {
-                let storage = Arc::new(Storage::init(runner_id, db_path)?);
-                storage.requeue_staged_jobs()?;
-                storage.check_stalled_jobs()?;
-                let port_map = storage.get_port_mapping(base_port, queues)?;
+                let storage = Arc::new(Storage::init(db_path)?);
+                storage.requeue_staged_jobs(server_id)?;
+                storage.check_stalled_jobs(server_id)?;
+                let port_map = storage.get_port_mapping(base_port, queues, server_id)?;
 
                 Ok((storage, port_map))
             })
         })
         .from_err::<Error>()
         .then(coerce)
-        .and_then(|(storage, port_map)| {
+        .and_then(move |(storage, port_map)| {
             for queue in config.queues.iter() {
                 let port = port_map.get(queue).ok_or(MissingQueue(queue.to_owned()))?;
 
@@ -84,6 +83,7 @@ impl Config {
                 info!("Creating queue {} on address {}", queue, address);
 
                 tokio::spawn(PushConfig::init(
+                    server_id,
                     address,
                     queue.to_owned(),
                     storage.clone(),
@@ -91,7 +91,7 @@ impl Config {
                 ));
             }
 
-            StalledConfig::init(storage.clone());
+            StalledConfig::init(server_id, storage.clone());
 
             let portmap_address = format!("tcp://{}:{}", config.ip, config.base_port + 1);
             info!("Creating portmap on address {}", portmap_address);
@@ -105,7 +105,7 @@ impl Config {
             let pull_address = format!("tcp://{}:{}", config.ip, config.base_port);
             info!("Creating puller on address {}", pull_address);
 
-            tokio::spawn(PullConfig::init(pull_address, storage, config));
+            tokio::spawn(PullConfig::init(server_id, pull_address, storage, config));
 
             Ok(())
         })
@@ -169,15 +169,15 @@ impl ServerConfig {
     /// This method returns a future that, when run, spawns all of the server's required futures
     /// onto tokio. Therefore, this can only be used from tokio.
     pub fn init<P: AsRef<Path>>(
+        server_id: usize,
         ip: &str,
         base_port: usize,
-        runner_id: usize,
         queues: BTreeSet<String>,
         db_path: P,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let context = Arc::new(Context::new());
 
-        Self::init_with_context(ip, base_port, runner_id, queues, db_path, context)
+        Self::init_with_context(server_id, ip, base_port, queues, db_path, context)
     }
 
     /// The same as `ServerConfig::init()`, but with a provided ZeroMQ Context.
@@ -188,17 +188,17 @@ impl ServerConfig {
     /// If you're running the Server, Worker, and Spawner in the same application, you should share
     /// a ZeroMQ context between them.
     pub fn init_with_context<P: AsRef<Path>>(
+        server_id: usize,
         ip: &str,
         base_port: usize,
-        runner_id: usize,
         queues: BTreeSet<String>,
         db_path: P,
         context: Arc<Context>,
     ) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let config = Config {
+            server_id,
             ip: ip.to_owned(),
             base_port,
-            runner_id,
             queues,
             db_path: db_path.as_ref().to_owned(),
             context,

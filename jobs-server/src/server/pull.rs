@@ -19,12 +19,13 @@
 
 use std::{sync::Arc, time::Duration};
 
-use background_jobs_core::{JobInfo, Storage};
+use background_jobs_core::{JobInfo, NewJobInfo, Storage};
 use failure::{Error, Fail};
 use futures::{future::poll_fn, Future, Stream};
 #[cfg(feature = "futures-zmq")]
 use futures_zmq::{prelude::*, Multipart, Pull};
 use log::{error, info, trace};
+use serde_derive::Deserialize;
 use tokio::timer::Delay;
 use tokio_threadpool::blocking;
 #[cfg(feature = "tokio-zmq")]
@@ -32,7 +33,15 @@ use tokio_zmq::{prelude::*, Multipart, Pull};
 
 use crate::server::{coerce, Config};
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+enum EitherJob {
+    New(NewJobInfo),
+    Existing(JobInfo),
+}
+
 pub(crate) struct PullConfig {
+    server_id: usize,
     puller: Pull,
     address: String,
     storage: Arc<Storage>,
@@ -41,11 +50,13 @@ pub(crate) struct PullConfig {
 
 impl PullConfig {
     pub(crate) fn init(
+        server_id: usize,
         address: String,
         storage: Arc<Storage>,
         config: Arc<Config>,
     ) -> impl Future<Item = (), Error = ()> {
         let cfg = ResetPullConfig {
+            server_id,
             address,
             storage,
             config,
@@ -57,6 +68,7 @@ impl PullConfig {
 
     fn run(self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let config = self.reset();
+        let server_id = self.server_id;
 
         let storage = self.storage.clone();
 
@@ -71,7 +83,7 @@ impl PullConfig {
             .and_then(parse_job)
             .and_then(move |job| {
                 trace!("Storing job, {:?}", job);
-                store_job(job, storage.clone())
+                store_job(job, storage.clone(), server_id)
             })
             .for_each(|_| Ok(()))
             .map(|_| info!("Puller is shutting down"))
@@ -86,6 +98,7 @@ impl PullConfig {
 
     fn reset(&self) -> ResetPullConfig {
         ResetPullConfig {
+            server_id: self.server_id,
             address: self.address.clone(),
             storage: self.storage.clone(),
             config: self.config.clone(),
@@ -97,7 +110,7 @@ impl PullConfig {
 #[fail(display = "Message was empty")]
 pub struct EmptyMessage;
 
-fn parse_job(mut multipart: Multipart) -> Result<JobInfo, Error> {
+fn parse_job(mut multipart: Multipart) -> Result<EitherJob, Error> {
     let unparsed_msg = multipart.pop_front().ok_or(EmptyMessage)?;
 
     let parsed = serde_json::from_slice(&unparsed_msg)?;
@@ -105,19 +118,32 @@ fn parse_job(mut multipart: Multipart) -> Result<JobInfo, Error> {
     Ok(parsed)
 }
 
-fn store_job(job: JobInfo, storage: Arc<Storage>) -> impl Future<Item = (), Error = Error> {
+fn store_job(
+    job: EitherJob,
+    storage: Arc<Storage>,
+    server_id: usize,
+) -> impl Future<Item = (), Error = Error> {
     let storage = storage.clone();
 
     poll_fn(move || {
         let job = job.clone();
         let storage = storage.clone();
 
-        blocking(move || storage.store_job(job).map_err(Error::from)).map_err(Error::from)
+        blocking(move || {
+            let job = match job {
+                EitherJob::New(new_job) => storage.assign_id(new_job, server_id)?,
+                EitherJob::Existing(job) => job,
+            };
+
+            storage.store_job(job, server_id).map_err(Error::from)
+        })
+        .map_err(Error::from)
     })
     .then(coerce)
 }
 
 struct ResetPullConfig {
+    server_id: usize,
     address: String,
     storage: Arc<Storage>,
     config: Arc<Config>,
@@ -137,6 +163,7 @@ impl ResetPullConfig {
             .build()
             .map(|puller| {
                 let config = PullConfig {
+                    server_id: self.server_id,
                     puller,
                     address: self.address,
                     storage: self.storage,

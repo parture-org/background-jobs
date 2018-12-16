@@ -34,6 +34,7 @@ use zmq::Message;
 use crate::server::{coerce, Config};
 
 pub(crate) struct PushConfig {
+    server_id: usize,
     pusher: Push,
     address: String,
     queue: String,
@@ -43,12 +44,14 @@ pub(crate) struct PushConfig {
 
 impl PushConfig {
     pub(crate) fn init(
+        server_id: usize,
         address: String,
         queue: String,
         storage: Arc<Storage>,
         config: Arc<Config>,
     ) -> impl Future<Item = (), Error = ()> {
         let cfg = ResetPushConfig {
+            server_id,
             address,
             queue,
             storage,
@@ -63,6 +66,7 @@ impl PushConfig {
         let reset = self.reset();
 
         let PushConfig {
+            server_id,
             address: _,
             pusher,
             queue,
@@ -74,7 +78,7 @@ impl PushConfig {
 
         let fut = Interval::new(tokio::clock::now(), Duration::from_millis(250))
             .from_err()
-            .and_then(move |_| dequeue_jobs(storage.clone(), queue.clone()))
+            .and_then(move |_| dequeue_jobs(storage.clone(), queue.clone(), server_id))
             .flatten()
             .forward(pusher.sink(25))
             .map(move |_| {
@@ -94,6 +98,7 @@ impl PushConfig {
 
     fn reset(&self) -> ResetPushConfig {
         ResetPushConfig {
+            server_id: self.server_id,
             address: self.address.clone(),
             queue: self.queue.clone(),
             storage: self.storage.clone(),
@@ -105,11 +110,12 @@ impl PushConfig {
 fn dequeue_jobs(
     storage: Arc<Storage>,
     queue: String,
+    server_id: usize,
 ) -> impl Future<Item = impl Stream<Item = Multipart, Error = Error>, Error = Error> {
     poll_fn(move || {
         let storage = storage.clone();
         let queue = queue.clone();
-        blocking(move || wrap_fetch_queue(storage, &queue))
+        blocking(move || wrap_fetch_queue(storage, &queue, server_id))
     })
     .then(coerce)
     .map(|jobs| iter_ok(jobs))
@@ -119,8 +125,12 @@ fn dequeue_jobs(
     })
 }
 
-fn wrap_fetch_queue(storage: Arc<Storage>, queue: &str) -> Result<Vec<Multipart>, Error> {
-    let response = fetch_queue(storage, queue)?;
+fn wrap_fetch_queue(
+    storage: Arc<Storage>,
+    queue: &str,
+    server_id: usize,
+) -> Result<Vec<Multipart>, Error> {
+    let response = fetch_queue(storage, queue, server_id)?;
 
     let jobs = response
         .into_iter()
@@ -135,11 +145,18 @@ fn wrap_fetch_queue(storage: Arc<Storage>, queue: &str) -> Result<Vec<Multipart>
     Ok(jobs)
 }
 
-fn fetch_queue(storage: Arc<Storage>, queue: &str) -> Result<Vec<JobInfo>, Error> {
-    storage.stage_jobs(100, queue).map_err(Error::from)
+fn fetch_queue(
+    storage: Arc<Storage>,
+    queue: &str,
+    server_id: usize,
+) -> Result<Vec<JobInfo>, Error> {
+    storage
+        .stage_jobs(100, queue, server_id)
+        .map_err(Error::from)
 }
 
 struct ResetPushConfig {
+    server_id: usize,
     address: String,
     queue: String,
     storage: Arc<Storage>,
@@ -161,6 +178,7 @@ impl ResetPushConfig {
             .build()
             .map(|pusher| {
                 let config = PushConfig {
+                    server_id: self.server_id,
                     pusher,
                     address: self.address,
                     queue: self.queue,

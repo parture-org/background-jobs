@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 
 use futures::future::{Either, Future, IntoFuture};
+use log::{error, info};
 use serde_json::Value;
 
 use crate::{JobError, JobInfo, Processor};
@@ -107,12 +108,12 @@ fn process(process_fn: &ProcessFn, mut job: JobInfo) -> impl Future<Item = JobIn
 
     process_fn(args).then(move |res| match res {
         Ok(_) => {
-            info!("Job completed, {}", processor);
+            info!("Job {} completed, {}", job.id(), processor);
             job.pass();
             Ok(job)
         }
         Err(e) => {
-            error!("Job errored, {}, {}", processor, e);
+            error!("Job {} errored, {}, {}", job.id(), processor, e);
             job.fail();
             Ok(job)
         }

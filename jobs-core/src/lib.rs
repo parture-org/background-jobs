@@ -17,14 +17,8 @@
  * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#[macro_use]
-extern crate failure;
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate serde_derive;
-
-use failure::Error;
+use failure::{Error, Fail};
+use serde_derive::{Deserialize, Serialize};
 
 mod job;
 mod job_info;
@@ -33,7 +27,10 @@ mod processor_map;
 mod storage;
 
 pub use crate::{
-    job::Job, job_info::JobInfo, processor::Processor, processor_map::ProcessorMap,
+    job::Job,
+    job_info::{JobInfo, NewJobInfo},
+    processor::Processor,
+    processor_map::ProcessorMap,
     storage::Storage,
 };
 

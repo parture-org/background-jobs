@@ -18,9 +18,70 @@
  */
 
 use chrono::{offset::Utc, DateTime, Duration as OldDuration};
+use log::trace;
+use serde_derive::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{Backoff, JobStatus, MaxRetries, ShouldStop};
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct NewJobInfo {
+    /// Name of the processor that should handle this job
+    processor: String,
+
+    /// Name of the queue that this job is a part of
+    queue: String,
+
+    /// Arguments for a given job
+    args: Value,
+
+    /// the initial MaxRetries value, for comparing to the current retry count
+    max_retries: MaxRetries,
+
+    /// How often retries should be scheduled
+    backoff_strategy: Backoff,
+
+    /// The time this job should be dequeued
+    next_queue: Option<DateTime<Utc>>,
+}
+
+impl NewJobInfo {
+    pub(crate) fn schedule(&mut self, time: DateTime<Utc>) {
+        self.next_queue = Some(time);
+    }
+
+    pub(crate) fn new(
+        processor: String,
+        queue: String,
+        args: Value,
+        max_retries: MaxRetries,
+        backoff_strategy: Backoff,
+    ) -> Self {
+        NewJobInfo {
+            processor,
+            queue,
+            args,
+            max_retries,
+            next_queue: None,
+            backoff_strategy,
+        }
+    }
+
+    pub(crate) fn with_id(self, id: usize) -> JobInfo {
+        JobInfo {
+            id,
+            processor: self.processor,
+            queue: self.queue,
+            status: JobStatus::Pending,
+            args: self.args,
+            retry_count: 0,
+            max_retries: self.max_retries,
+            next_queue: self.next_queue,
+            backoff_strategy: self.backoff_strategy,
+            updated_at: Utc::now(),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 /// Metadata pertaining to a job that exists within the background_jobs system
@@ -30,8 +91,8 @@ use crate::{Backoff, JobStatus, MaxRetries, ShouldStop};
 /// [Processor](https://docs.rs/background-jobs/0.3.0/background_jobs/trait.Processor.html)'s
 /// new_job method.
 pub struct JobInfo {
-    /// ID of the job, None means an ID has not been set
-    id: Option<usize>,
+    /// ID of the job
+    id: usize,
 
     /// Name of the processor that should handle this job
     processor: String,
@@ -62,25 +123,8 @@ pub struct JobInfo {
 }
 
 impl JobInfo {
-    pub(crate) fn new(
-        processor: String,
-        queue: String,
-        args: Value,
-        max_retries: MaxRetries,
-        backoff_strategy: Backoff,
-    ) -> Self {
-        JobInfo {
-            id: None,
-            processor,
-            queue,
-            status: JobStatus::Pending,
-            args,
-            retry_count: 0,
-            max_retries,
-            next_queue: None,
-            backoff_strategy,
-            updated_at: Utc::now(),
-        }
+    pub fn queue(&self) -> &str {
+        &self.queue
     }
 
     pub(crate) fn updated(&mut self) {
@@ -99,14 +143,8 @@ impl JobInfo {
         self.status.clone()
     }
 
-    pub(crate) fn id(&self) -> Option<usize> {
-        self.id.clone()
-    }
-
-    pub(crate) fn set_id(&mut self, id: usize) {
-        if self.id.is_none() {
-            self.id = Some(id);
-        }
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     pub(crate) fn increment(&mut self) -> ShouldStop {
@@ -126,10 +164,13 @@ impl JobInfo {
         };
 
         self.next_queue = Some(next_queue);
-    }
 
-    pub(crate) fn schedule(&mut self, time: DateTime<Utc>) {
-        self.next_queue = Some(time);
+        trace!(
+            "Now {}, Next queue {}, ready {}",
+            now,
+            next_queue,
+            self.is_ready(now),
+        );
     }
 
     pub(crate) fn is_stale(&self) -> bool {
@@ -145,6 +186,25 @@ impl JobInfo {
 
     pub(crate) fn is_failed(&self) -> bool {
         self.status == JobStatus::Failed
+    }
+
+    pub fn needs_retry(&mut self) -> bool {
+        let should_retry = self.is_failed() && self.increment().should_requeue();
+
+        if should_retry {
+            self.pending();
+            self.next_queue();
+        }
+
+        should_retry
+    }
+
+    pub fn retry_ready(&self) -> bool {
+        self.is_ready(Utc::now())
+    }
+
+    pub fn is_pending(&self) -> bool {
+        self.status == JobStatus::Pending
     }
 
     pub(crate) fn is_in_queue(&self, queue: &str) -> bool {

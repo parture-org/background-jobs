@@ -18,17 +18,19 @@
  */
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::PathBuf,
     str::Utf8Error,
     sync::{Arc, RwLock, RwLockWriteGuard},
 };
 
 use chrono::offset::Utc;
+use failure::Fail;
 use kv::{json::Json, Bucket, Config, CursorOp, Error, Manager, Serde, Store, Txn, ValueBuf};
 use lmdb::Error as LmdbError;
+use log::{info, trace};
 
-use crate::{JobInfo, JobStatus};
+use crate::{JobInfo, JobStatus, NewJobInfo};
 
 struct Buckets<'a> {
     queued: Bucket<'a, &'a [u8], ValueBuf<Json<usize>>>,
@@ -61,16 +63,15 @@ impl<'a> Buckets<'a> {
 /// None of the methods in this module are intended to be used outside of a background-jobs
 /// runtime.
 pub struct Storage {
-    runner_id: usize,
     store: Arc<RwLock<Store>>,
 }
 
 impl Storage {
-    pub fn new(runner_id: usize, store: Arc<RwLock<Store>>) -> Self {
-        Storage { runner_id, store }
+    pub fn new(store: Arc<RwLock<Store>>) -> Self {
+        Storage { store }
     }
 
-    pub fn init(runner_id: usize, path: PathBuf) -> Result<Self, Error> {
+    pub fn init(path: PathBuf) -> Result<Self, Error> {
         let mut manager = Manager::new();
         let mut cfg = Config::default(path);
 
@@ -83,17 +84,17 @@ impl Storage {
 
         let handle = manager.open(cfg)?;
 
-        Ok(Storage::new(runner_id, handle))
+        Ok(Storage::new(handle))
     }
 
-    pub fn get_new_id(&self) -> Result<usize, Error> {
+    pub fn get_new_id(&self, runner_id: usize) -> Result<usize, Error> {
         let store = self.store.write()?;
 
         let bucket = store.bucket::<&[u8], ValueBuf<Json<usize>>>(Some(Storage::id_store()))?;
 
         let mut txn = store.write_txn()?;
 
-        let new_id = self.with_lock(&bucket, &mut txn, b"id-lock", |txn| {
+        let new_id = self.with_lock(&bucket, &mut txn, b"id-lock", runner_id, |txn| {
             let id = match txn.get(&bucket, b"current-id") {
                 Ok(id) => id.inner()?.to_serde(),
                 Err(e) => match e {
@@ -115,7 +116,7 @@ impl Storage {
         Ok(new_id)
     }
 
-    pub fn requeue_staged_jobs(&self) -> Result<(), Error> {
+    pub fn requeue_staged_jobs(&self, runner_id: usize) -> Result<(), Error> {
         let store = self.store.write()?;
         let job_bucket =
             store.bucket::<&[u8], ValueBuf<Json<JobInfo>>>(Some(Storage::job_store()))?;
@@ -128,95 +129,42 @@ impl Storage {
         let mut write_txn = store.write_txn()?;
         let read_txn = store.read_txn()?;
 
-        self.with_lock::<_, (), _>(&lock_bucket, &mut write_txn, b"job-queue", |inner_txn| {
-            let mut cursor = read_txn.read_cursor(&buckets.staged)?;
-            match cursor.get(None, CursorOp::First) {
-                Ok(_) => (),
-                Err(e) => match e {
-                    Error::NotFound => {
-                        return Ok(());
-                    }
-                    e => {
-                        return Err(e);
-                    }
-                },
-            }
-
-            let initial_value = Ok(inner_txn) as Result<&mut Txn, Error>;
-
-            let _ = cursor.iter().fold(initial_value, |acc, (key, _)| {
-                acc.and_then(|inner_txn| {
-                    let job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
-
-                    let job_value = Json::to_value_buf(job)?;
-                    inner_txn.set(&job_bucket, key, job_value)?;
-                    self.queue_job(&buckets, inner_txn, key)?;
-
-                    Ok(inner_txn)
-                })
-            })?;
-
-            Ok(())
-        })?;
-
-        read_txn.commit()?;
-        write_txn.commit()?;
-
-        Ok(())
-    }
-
-    pub fn check_stalled_jobs(&self) -> Result<(), Error> {
-        let store = self.store.write()?;
-        let job_bucket =
-            store.bucket::<&[u8], ValueBuf<Json<JobInfo>>>(Some(Storage::job_store()))?;
-
-        let lock_bucket =
-            store.bucket::<&[u8], ValueBuf<Json<usize>>>(Some(Storage::job_lock()))?;
-
-        let buckets = Buckets::new(&store)?;
-
-        let mut write_txn = store.write_txn()?;
-        let read_txn = store.read_txn()?;
-
-        self.with_lock::<_, (), _>(&lock_bucket, &mut write_txn, b"job-queue", |inner_txn| {
-            let mut cursor = read_txn.read_cursor(&buckets.running)?;
-            match cursor.get(None, CursorOp::First) {
-                Ok(_) => (),
-                Err(e) => match e {
-                    Error::NotFound => {
-                        return Ok(());
-                    }
-                    e => {
-                        return Err(e);
-                    }
-                },
-            }
-
-            let initial_value = Ok(inner_txn) as Result<&mut Txn, Error>;
-
-            let _ = cursor.iter().fold(initial_value, |acc, (key, _)| {
-                acc.and_then(|inner_txn| {
-                    let mut job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
-
-                    if job.is_stale() {
-                        if job.increment().should_requeue() {
-                            let job_value = Json::to_value_buf(job)?;
-                            inner_txn.set(&job_bucket, key, job_value)?;
-                            self.queue_job(&buckets, inner_txn, key)?;
-                        } else {
-                            job.fail();
-                            let job_value = Json::to_value_buf(job)?;
-                            inner_txn.set(&job_bucket, key, job_value)?;
-                            self.fail_job(&buckets, inner_txn, key)?;
+        self.with_lock::<_, (), _>(
+            &lock_bucket,
+            &mut write_txn,
+            b"job-queue",
+            runner_id,
+            |inner_txn| {
+                let mut cursor = read_txn.read_cursor(&buckets.staged)?;
+                match cursor.get(None, CursorOp::First) {
+                    Ok(_) => (),
+                    Err(e) => match e {
+                        Error::NotFound => {
+                            return Ok(());
                         }
-                    }
+                        e => {
+                            return Err(e);
+                        }
+                    },
+                }
 
-                    Ok(inner_txn)
-                })
-            })?;
+                let initial_value = Ok(inner_txn) as Result<&mut Txn, Error>;
 
-            Ok(())
-        })?;
+                let _ = cursor.iter().fold(initial_value, |acc, (key, _)| {
+                    acc.and_then(|inner_txn| {
+                        let job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
+
+                        let job_value = Json::to_value_buf(job)?;
+                        inner_txn.set(&job_bucket, key, job_value)?;
+                        self.queue_job(&buckets, inner_txn, key, runner_id)?;
+
+                        Ok(inner_txn)
+                    })
+                })?;
+
+                Ok(())
+            },
+        )?;
 
         read_txn.commit()?;
         write_txn.commit()?;
@@ -224,7 +172,77 @@ impl Storage {
         Ok(())
     }
 
-    pub fn stage_jobs(&self, limit: usize, queue: &str) -> Result<Vec<JobInfo>, Error> {
+    pub fn check_stalled_jobs(&self, runner_id: usize) -> Result<(), Error> {
+        let store = self.store.write()?;
+        let job_bucket =
+            store.bucket::<&[u8], ValueBuf<Json<JobInfo>>>(Some(Storage::job_store()))?;
+
+        let lock_bucket =
+            store.bucket::<&[u8], ValueBuf<Json<usize>>>(Some(Storage::job_lock()))?;
+
+        let buckets = Buckets::new(&store)?;
+
+        let mut write_txn = store.write_txn()?;
+        let read_txn = store.read_txn()?;
+
+        self.with_lock::<_, (), _>(
+            &lock_bucket,
+            &mut write_txn,
+            b"job-queue",
+            runner_id,
+            |inner_txn| {
+                let mut cursor = read_txn.read_cursor(&buckets.running)?;
+                match cursor.get(None, CursorOp::First) {
+                    Ok(_) => (),
+                    Err(e) => match e {
+                        Error::NotFound => {
+                            return Ok(());
+                        }
+                        e => {
+                            return Err(e);
+                        }
+                    },
+                }
+
+                let initial_value = Ok(inner_txn) as Result<&mut Txn, Error>;
+
+                let _ = cursor.iter().fold(initial_value, |acc, (key, _)| {
+                    acc.and_then(|inner_txn| {
+                        let mut job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
+
+                        if job.is_stale() {
+                            if job.increment().should_requeue() {
+                                let job_value = Json::to_value_buf(job)?;
+                                inner_txn.set(&job_bucket, key, job_value)?;
+                                self.queue_job(&buckets, inner_txn, key, runner_id)?;
+                            } else {
+                                job.fail();
+                                let job_value = Json::to_value_buf(job)?;
+                                inner_txn.set(&job_bucket, key, job_value)?;
+                                self.fail_job(&buckets, inner_txn, key, runner_id)?;
+                            }
+                        }
+
+                        Ok(inner_txn)
+                    })
+                })?;
+
+                Ok(())
+            },
+        )?;
+
+        read_txn.commit()?;
+        write_txn.commit()?;
+
+        Ok(())
+    }
+
+    pub fn stage_jobs(
+        &self,
+        limit: usize,
+        queue: &str,
+        runner_id: usize,
+    ) -> Result<Vec<JobInfo>, Error> {
         let store = self.store.write()?;
 
         trace!("Got store");
@@ -246,11 +264,34 @@ impl Storage {
             &lock_bucket,
             &mut txn,
             b"job-queue",
+            runner_id,
             |inner_txn| {
+                trace!("Got lock");
+
+                let mut jobs = HashMap::new();
                 let mut cursor = read_txn.read_cursor(&buckets.queued)?;
+                let now = Utc::now();
+
                 trace!("Got cursor");
                 match cursor.get(None, CursorOp::First) {
-                    Ok(_) => (),
+                    Ok((maybe_key, _)) => {
+                        if let Some(key) = maybe_key {
+                            match inner_txn.get(&job_bucket, &key) {
+                                Ok(job) => {
+                                    let mut job = job.inner()?.to_serde();
+                                    if job.is_ready(now) && job.is_in_queue(queue) {
+                                        job.stage();
+                                        self.stage_job(&buckets, inner_txn, key, runner_id)?;
+                                        jobs.insert(job.id(), job);
+                                    }
+                                }
+                                Err(e) => match e {
+                                    Error::NotFound => (),
+                                    err => return Err(err),
+                                },
+                            }
+                        }
+                    }
                     Err(e) => match e {
                         Error::NotFound => {
                             trace!("No items in queue");
@@ -264,22 +305,18 @@ impl Storage {
                 trace!("Set cursor to first");
 
                 let initial_value =
-                    Ok((inner_txn, Vec::new())) as Result<(&mut Txn, Vec<JobInfo>), Error>;
+                    Ok((inner_txn, jobs)) as Result<(&mut Txn, HashMap<usize, JobInfo>), Error>;
 
-                let now = Utc::now();
-
-                trace!("Got lock");
-                let (_inner_txn, vec) = cursor.iter().fold(initial_value, |acc, (key, _)| {
+                let (_inner_txn, mut hm) = cursor.iter().fold(initial_value, |acc, (key, _)| {
                     acc.and_then(|(inner_txn, mut jobs)| {
                         if jobs.len() < limit {
                             let mut job = inner_txn.get(&job_bucket, &key)?.inner()?.to_serde();
 
-                            job.stage();
-
                             if job.is_ready(now) && job.is_in_queue(queue) {
-                                self.stage_job(&buckets, inner_txn, key)?;
+                                job.stage();
+                                self.stage_job(&buckets, inner_txn, key, runner_id)?;
 
-                                jobs.push(job);
+                                jobs.insert(job.id(), job);
                             }
                         }
 
@@ -287,7 +324,7 @@ impl Storage {
                     })
                 })?;
 
-                Ok(vec)
+                Ok(hm.drain().map(|(_, v)| v).collect())
             },
         )?;
 
@@ -302,26 +339,18 @@ impl Storage {
         Ok(result)
     }
 
-    pub fn store_job(&self, mut job: JobInfo) -> Result<(), Error> {
-        let job_id = match job.id() {
-            Some(id) => id.to_string(),
-            None => {
-                let id = self.get_new_id()?;
-                job.set_id(id);
-                id.to_string()
-            }
-        };
+    pub fn assign_id(&self, job: NewJobInfo, runner_id: usize) -> Result<JobInfo, Error> {
+        let id = self.get_new_id(runner_id)?;
+        let job = job.with_id(id);
+        trace!("Generaged job id, {}", job.id());
+        Ok(job)
+    }
 
+    pub fn store_job(&self, mut job: JobInfo, runner_id: usize) -> Result<(), Error> {
+        let job_id = job.id().to_string();
         job.updated();
 
-        trace!("Generaged job id, {}", job_id);
-
-        if job.is_failed() {
-            if job.increment().should_requeue() {
-                job.pending();
-                job.next_queue();
-            }
-        }
+        job.needs_retry();
 
         let status = job.status();
         let job_value = Json::to_value_buf(job)?;
@@ -341,11 +370,13 @@ impl Storage {
         trace!("Set value");
 
         match status {
-            JobStatus::Pending => self.queue_job(&buckets, &mut txn, job_id.as_ref())?,
-            JobStatus::Running => self.run_job(&buckets, &mut txn, job_id.as_ref())?,
-            JobStatus::Staged => self.stage_job(&buckets, &mut txn, job_id.as_ref())?,
-            JobStatus::Failed => self.fail_job(&buckets, &mut txn, job_id.as_ref())?,
-            JobStatus::Finished => self.finish_job(&buckets, &mut txn, job_id.as_ref())?,
+            JobStatus::Pending => self.queue_job(&buckets, &mut txn, job_id.as_ref(), runner_id)?,
+            JobStatus::Running => self.run_job(&buckets, &mut txn, job_id.as_ref(), runner_id)?,
+            JobStatus::Staged => self.stage_job(&buckets, &mut txn, job_id.as_ref(), runner_id)?,
+            JobStatus::Failed => self.fail_job(&buckets, &mut txn, job_id.as_ref(), runner_id)?,
+            JobStatus::Finished => {
+                self.finish_job(&buckets, &mut txn, job_id.as_ref(), runner_id)?
+            }
         }
 
         trace!("Committing");
@@ -360,6 +391,7 @@ impl Storage {
         &self,
         base_port: usize,
         queues: BTreeSet<String>,
+        runner_id: usize,
     ) -> Result<BTreeMap<String, usize>, PortMapError> {
         let store = self.store.write().map_err(|e| Error::from(e))?;
 
@@ -375,6 +407,7 @@ impl Storage {
             &queue_port_bucket,
             &mut write_txn,
             lock_name.as_ref(),
+            runner_id,
             |write_txn| {
                 let mut cursor = read_txn.read_cursor(&queue_port_bucket)?;
 
@@ -436,8 +469,9 @@ impl Storage {
         buckets: &'env Buckets<'env>,
         txn: &mut Txn<'env>,
         id: &[u8],
+        runner_id: usize,
     ) -> Result<(), Error> {
-        self.add_job_to(&buckets.staged, txn, id)?;
+        self.add_job_to(&buckets.staged, txn, id, runner_id)?;
         self.delete_job_from(&buckets.finished, txn, id)?;
         self.delete_job_from(&buckets.failed, txn, id)?;
         self.delete_job_from(&buckets.running, txn, id)?;
@@ -451,8 +485,9 @@ impl Storage {
         buckets: &'env Buckets<'env>,
         txn: &mut Txn<'env>,
         id: &[u8],
+        runner_id: usize,
     ) -> Result<(), Error> {
-        self.add_job_to(&buckets.queued, txn, id)?;
+        self.add_job_to(&buckets.queued, txn, id, runner_id)?;
         self.delete_job_from(&buckets.finished, txn, id)?;
         self.delete_job_from(&buckets.failed, txn, id)?;
         self.delete_job_from(&buckets.running, txn, id)?;
@@ -466,8 +501,9 @@ impl Storage {
         buckets: &'env Buckets<'env>,
         txn: &mut Txn<'env>,
         id: &[u8],
+        runner_id: usize,
     ) -> Result<(), Error> {
-        self.add_job_to(&buckets.failed, txn, id)?;
+        self.add_job_to(&buckets.failed, txn, id, runner_id)?;
         self.delete_job_from(&buckets.finished, txn, id)?;
         self.delete_job_from(&buckets.running, txn, id)?;
         self.delete_job_from(&buckets.staged, txn, id)?;
@@ -481,8 +517,9 @@ impl Storage {
         buckets: &'env Buckets<'env>,
         txn: &mut Txn<'env>,
         id: &[u8],
+        runner_id: usize,
     ) -> Result<(), Error> {
-        self.add_job_to(&buckets.running, txn, id)?;
+        self.add_job_to(&buckets.running, txn, id, runner_id)?;
         self.delete_job_from(&buckets.staged, txn, id)?;
         self.delete_job_from(&buckets.finished, txn, id)?;
         self.delete_job_from(&buckets.failed, txn, id)?;
@@ -496,8 +533,9 @@ impl Storage {
         buckets: &'env Buckets<'env>,
         txn: &mut Txn<'env>,
         id: &[u8],
+        runner_id: usize,
     ) -> Result<(), Error> {
-        self.add_job_to(&buckets.finished, txn, id)?;
+        self.add_job_to(&buckets.finished, txn, id, runner_id)?;
         self.delete_job_from(&buckets.running, txn, id)?;
         self.delete_job_from(&buckets.staged, txn, id)?;
         self.delete_job_from(&buckets.failed, txn, id)?;
@@ -511,8 +549,9 @@ impl Storage {
         bucket: &'env Bucket<&[u8], ValueBuf<Json<usize>>>,
         txn: &mut Txn<'env>,
         id: &[u8],
+        runner_id: usize,
     ) -> Result<(), Error> {
-        txn.set(bucket, id, Json::to_value_buf(self.runner_id)?)?;
+        txn.set(bucket, id, Json::to_value_buf(runner_id)?)?;
         trace!("Set value");
 
         Ok(())
@@ -545,16 +584,17 @@ impl Storage {
         lock_bucket: &'env Bucket<&[u8], ValueBuf<Json<usize>>>,
         txn: &mut Txn<'env>,
         lock_key: &[u8],
+        runner_id: usize,
         callback: F,
     ) -> Result<T, E>
     where
         F: Fn(&mut Txn<'env>) -> Result<T, E>,
         E: From<Error>,
     {
-        let mut other_runner_id = 0;
+        let mut other_runner_id = 10;
 
         loop {
-            let lock_value = Json::to_value_buf(self.runner_id)?;
+            let lock_value = Json::to_value_buf(runner_id)?;
 
             let mut inner_txn = txn.txn()?;
             let res = inner_txn.set_no_overwrite(lock_bucket, lock_key, lock_value);

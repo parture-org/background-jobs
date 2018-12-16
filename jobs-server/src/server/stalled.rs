@@ -30,12 +30,13 @@ use crate::server::coerce;
 
 #[derive(Clone)]
 pub(crate) struct StalledConfig {
+    server_id: usize,
     storage: Arc<Storage>,
 }
 
 impl StalledConfig {
-    pub(crate) fn init(storage: Arc<Storage>) {
-        let cfg = StalledConfig { storage };
+    pub(crate) fn init(server_id: usize, storage: Arc<Storage>) {
+        let cfg = StalledConfig { server_id, storage };
 
         tokio::spawn(cfg.run());
     }
@@ -43,7 +44,7 @@ impl StalledConfig {
     fn run(self) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         let reset = self.clone();
 
-        let StalledConfig { storage } = self;
+        let StalledConfig { server_id, storage } = self;
 
         let fut = Interval::new(tokio::clock::now(), Duration::from_secs(60 * 30))
             .from_err::<Error>()
@@ -51,7 +52,7 @@ impl StalledConfig {
                 let storage = storage.clone();
                 poll_fn(move || {
                     let storage = storage.clone();
-                    blocking(move || storage.check_stalled_jobs().map_err(Error::from))
+                    blocking(move || storage.check_stalled_jobs(server_id).map_err(Error::from))
                 })
                 .from_err()
             })

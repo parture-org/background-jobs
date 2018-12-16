@@ -18,14 +18,14 @@
  */
 
 use chrono::{offset::Utc, DateTime};
-use failure::Error;
+use failure::{Error, Fail};
 use futures::{
     future::{Either, IntoFuture},
     Future,
 };
 use serde_json::Value;
 
-use crate::{Backoff, Job, JobError, JobInfo, MaxRetries};
+use crate::{Backoff, Job, JobError, MaxRetries, NewJobInfo};
 
 /// ## The Processor trait
 ///
@@ -85,7 +85,7 @@ pub trait Processor<S = ()>: Clone
 where
     S: Clone + Send + Sync + 'static,
 {
-    type Job: Job<S>;
+    type Job: Job<S> + 'static;
 
     /// The name of the processor
     ///
@@ -112,15 +112,15 @@ where
     ///
     /// This is required for spawning jobs, since it enforces the relationship between the job and
     /// the Processor that should handle it.
-    fn new_job(job: Self::Job) -> Result<JobInfo, Error> {
+    fn new_job(job: Self::Job) -> Result<NewJobInfo, Error> {
         let queue = job.queue().unwrap_or(Self::QUEUE).to_owned();
         let max_retries = job.max_retries().unwrap_or(Self::MAX_RETRIES);
         let backoff_strategy = job.backoff_strategy().unwrap_or(Self::BACKOFF_STRATEGY);
 
-        let job = JobInfo::new(
+        let job = NewJobInfo::new(
             Self::NAME.to_owned(),
             queue,
-            serde_json::to_value(job)?,
+            serde_json::to_value(job).map_err(|_| ToJson)?,
             max_retries,
             backoff_strategy,
         );
@@ -129,7 +129,7 @@ where
     }
 
     /// Create a JobInfo to schedule a job to be performed after a certain time
-    fn new_scheduled_job(job: Self::Job, after: DateTime<Utc>) -> Result<JobInfo, Error> {
+    fn new_scheduled_job(job: Self::Job, after: DateTime<Utc>) -> Result<NewJobInfo, Error> {
         let mut job = Self::new_job(job)?;
         job.schedule(after);
 
@@ -187,3 +187,7 @@ where
         Box::new(fut)
     }
 }
+
+#[derive(Clone, Debug, Fail)]
+#[fail(display = "Failed to to turn job into value")]
+pub struct ToJson;
