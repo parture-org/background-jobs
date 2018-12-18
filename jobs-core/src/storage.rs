@@ -852,10 +852,13 @@ impl Stat {
     }
 
     fn inner_stat(self) -> JobStat {
-        match self {
+        let mut job_stat = match self {
             Stat::DeadJobs(job_stat) => job_stat,
             Stat::CompletedJobs(job_stat) => job_stat,
-        }
+        };
+
+        job_stat.tick();
+        job_stat
     }
 
     fn dead_jobs() -> &'static str {
@@ -898,12 +901,12 @@ impl JobStat {
     }
 
     fn increment(&mut self) {
+        self.tick();
+
         self.this_hour += 1;
         self.today += 1;
         self.this_month += 1;
         self.all_time += 1;
-
-        self.tick();
     }
 
     fn tick(&mut self) {
