@@ -114,7 +114,7 @@ impl Storage {
             let id = match txn.get(&bucket, b"current-id") {
                 Ok(id) => id.inner()?.to_serde(),
                 Err(e) => match e {
-                    Error::NotFound => 1,
+                    Error::NotFound => 0,
                     _ => return Err(e),
                 },
             };
