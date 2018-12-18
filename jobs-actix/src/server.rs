@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use actix::{Actor, Addr, Context, Handler, Message, SyncContext};
-use background_jobs_core::{JobInfo, NewJobInfo, Storage};
+use background_jobs_core::{JobInfo, NewJobInfo, Stats, Storage};
 use failure::Error;
 use log::{debug, trace};
 use serde_derive::Deserialize;
@@ -51,6 +51,12 @@ pub struct CheckDb;
 
 impl Message for CheckDb {
     type Result = Result<(), Error>;
+}
+
+pub struct GetStats;
+
+impl Message for GetStats {
+    type Result = Result<Stats, Error>;
 }
 
 struct Cache<W>
@@ -245,5 +251,16 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl<W> Handler<GetStats> for Server<W>
+where
+    W: Actor<Context = Context<W>> + Handler<ProcessJob>,
+{
+    type Result = Result<Stats, Error>;
+
+    fn handle(&mut self, _: GetStats, _: &mut Self::Context) -> Self::Result {
+        Ok(self.storage.get_stats()?)
     }
 }

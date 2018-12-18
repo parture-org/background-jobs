@@ -1,8 +1,9 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use actix::{Actor, Addr, SyncArbiter};
-use background_jobs_core::{Processor, ProcessorMap, Storage};
+use background_jobs_core::{Processor, ProcessorMap, Stats, Storage};
 use failure::Error;
+use futures::Future;
 
 mod pinger;
 mod server;
@@ -11,7 +12,7 @@ pub use self::{server::Server, worker::LocalWorker};
 
 use self::{
     pinger::Pinger,
-    server::{CheckDb, EitherJob, RequestJob},
+    server::{CheckDb, EitherJob, GetStats, RequestJob},
     worker::ProcessJob,
 };
 
@@ -109,5 +110,19 @@ where
     {
         self.inner.do_send(EitherJob::New(P::new_job(job)?));
         Ok(())
+    }
+
+    pub fn get_stats(&self) -> Box<dyn Future<Item = Stats, Error = Error> + Send> {
+        Box::new(self.inner.send(GetStats).then(coerce))
+    }
+}
+
+fn coerce<I, E, F>(res: Result<Result<I, E>, F>) -> Result<I, E>
+where
+    E: From<F>,
+{
+    match res {
+        Ok(inner) => inner,
+        Err(e) => Err(e.into()),
     }
 }

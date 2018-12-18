@@ -273,7 +273,7 @@
 //! `background-jobs-core` crate, which provides the LMDB storage, Processor and Job traits, as well as some
 //! other useful types for implementing a jobs processor.
 
-pub use background_jobs_core::{Backoff, Job, MaxRetries, Processor};
+pub use background_jobs_core::{Backoff, Job, JobStat, MaxRetries, Processor, Stat, Stats};
 
 #[cfg(feature = "background-jobs-server")]
 pub use background_jobs_server::{ServerConfig, SpawnerConfig, SyncJob, WorkerConfig};

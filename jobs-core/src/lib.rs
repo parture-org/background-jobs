@@ -31,7 +31,7 @@ pub use crate::{
     job_info::{JobInfo, NewJobInfo},
     processor::Processor,
     processor_map::ProcessorMap,
-    storage::Storage,
+    storage::{JobStat, Stat, Stats, Storage},
 };
 
 #[derive(Debug, Fail)]
