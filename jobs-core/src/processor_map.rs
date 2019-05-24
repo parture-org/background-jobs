@@ -32,8 +32,11 @@ use crate::{JobError, JobInfo, Processor};
 /// directly, the
 /// [`ProcessorMap`](https://docs.rs/background-jobs-core/0.4.0/background_jobs_core/struct.ProcessorMap.html)
 /// struct stores these `ProcessFn` types that don't expose differences in Job types.
-pub type ProcessFn =
-    Box<dyn Fn(Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send>;
+pub type ProcessFn<S> =
+    Box<dyn Fn(Value, S) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send>;
+
+
+pub type StateFn<S> = Box<dyn Fn() -> S + Send + Sync>;
 
 /// A type for storing the relationships between processor names and the processor itself
 ///
@@ -44,23 +47,23 @@ pub struct ProcessorMap<S>
 where
     S: Clone,
 {
-    inner: HashMap<String, ProcessFn>,
-    state: S,
+    inner: HashMap<String, ProcessFn<S>>,
+    state_fn: StateFn<S>,
 }
 
 impl<S> ProcessorMap<S>
 where
-    S: Clone + Send + 'static,
+    S: Clone + 'static,
 {
     /// Intialize a `ProcessorMap`
     ///
     /// The state passed into this method will be passed to all jobs executed through this
     /// ProcessorMap. The state argument could be useful for containing a hook into something like
     /// r2d2, or the address of an actor in an actix-based system.
-    pub fn new(state: S) -> Self {
+    pub fn new(state_fn: StateFn<S>) -> Self {
         ProcessorMap {
             inner: HashMap::new(),
-            state,
+            state_fn,
         }
     }
 
@@ -74,11 +77,9 @@ where
     where
         P: Processor<S> + Send + 'static,
     {
-        let state = self.state.clone();
-
         self.inner.insert(
             P::NAME.to_owned(),
-            Box::new(move |value| processor.process(value, state.clone())),
+            Box::new(move |value, state| processor.process(value, state)),
         );
     }
 
@@ -90,7 +91,7 @@ where
         let opt = self
             .inner
             .get(job.processor())
-            .map(|processor| process(processor, job.clone()));
+            .map(|processor| process(processor, (self.state_fn)(), job.clone()));
 
         if let Some(fut) = opt {
             Either::A(fut)
@@ -101,12 +102,12 @@ where
     }
 }
 
-fn process(process_fn: &ProcessFn, mut job: JobInfo) -> impl Future<Item = JobInfo, Error = ()> {
+fn process<S>(process_fn: &ProcessFn<S>, state: S, mut job: JobInfo) -> impl Future<Item = JobInfo, Error = ()> {
     let args = job.args();
 
     let processor = job.processor().to_owned();
 
-    process_fn(args).then(move |res| match res {
+    process_fn(args, state).then(move |res| match res {
         Ok(_) => {
             info!("Job {} completed, {}", job.id(), processor);
             job.pass();

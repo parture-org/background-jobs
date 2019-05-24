@@ -275,8 +275,5 @@
 
 pub use background_jobs_core::{Backoff, Job, JobStat, MaxRetries, Processor, Stat, Stats};
 
-#[cfg(feature = "background-jobs-server")]
-pub use background_jobs_server::{ServerConfig, SpawnerConfig, SyncJob, WorkerConfig};
-
 #[cfg(feature = "background-jobs-actix")]
 pub use background_jobs_actix::{QueueHandle, ServerConfig, WorkerConfig};

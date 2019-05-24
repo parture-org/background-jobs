@@ -26,7 +26,7 @@ use crate::{Backoff, MaxRetries};
 /// The Job trait defines parameters pertaining to an instance of background job
 pub trait Job<S = ()>: Serialize + DeserializeOwned
 where
-    S: Clone + Send + 'static,
+    S: Clone + 'static,
 {
     /// Users of this library must define what it means to run a job.
     ///
