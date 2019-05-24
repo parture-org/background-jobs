@@ -83,7 +83,7 @@ use crate::{Backoff, Job, JobError, MaxRetries, NewJobInfo};
 /// ```
 pub trait Processor<S = ()>: Clone
 where
-    S: Clone + Send + Sync + 'static,
+    S: Clone + Send + 'static,
 {
     type Job: Job<S> + 'static;
 

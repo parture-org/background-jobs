@@ -28,7 +28,7 @@ impl ServerConfig {
 
     pub fn start<S>(self) -> QueueHandle<S>
     where
-        S: Clone + Send + Sync + 'static,
+        S: Clone + Send + 'static,
     {
         let ServerConfig { server_id, db_path } = self;
 
@@ -44,7 +44,7 @@ impl ServerConfig {
 
 pub struct WorkerConfig<S>
 where
-    S: Clone + Send + Sync + 'static,
+    S: Clone + Send + 'static,
 {
     processors: ProcessorMap<S>,
     queues: BTreeMap<String, usize>,
@@ -52,7 +52,7 @@ where
 
 impl<S> WorkerConfig<S>
 where
-    S: Clone + Send + Sync + 'static,
+    S: Clone + Send + 'static,
 {
     pub fn new(state: S) -> Self {
         WorkerConfig {
@@ -63,7 +63,7 @@ where
 
     pub fn register<P>(&mut self, processor: P)
     where
-        P: Processor<S> + Send + Sync + 'static,
+        P: Processor<S> + Send + 'static,
     {
         self.queues.insert(P::QUEUE.to_owned(), 4);
         self.processors.register_processor(processor);
@@ -95,14 +95,14 @@ where
 #[derive(Clone)]
 pub struct QueueHandle<S>
 where
-    S: Clone + Send + Sync + 'static,
+    S: Clone + Send + 'static,
 {
     inner: Addr<Server<LocalWorker<S>>>,
 }
 
 impl<S> QueueHandle<S>
 where
-    S: Clone + Send + Sync + 'static,
+    S: Clone + Send + 'static,
 {
     pub fn queue<P>(&self, job: P::Job) -> Result<(), Error>
     where

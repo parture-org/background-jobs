@@ -13,24 +13,14 @@ edition = "2018"
 members = [
     "jobs-actix",
     "jobs-core",
-    "jobs-server",
-    "examples/server-jobs-example",
 ]
 
 [features]
-default = ["background-jobs-server", "background-jobs-server/tokio-zmq"]
-no_unix = ["background-jobs-server", "background-jobs-server/futures-zmq"]
-actix = ["background-jobs-actix"]
+default = ["background-jobs-actix"]
 
 [dependencies.background-jobs-core]
 version = "0.4"
 path = "jobs-core"
-
-[dependencies.background-jobs-server]
-version = "0.4"
-path = "jobs-server"
-default-features = false
-optional = true
 
 [dependencies.background-jobs-actix]
 version = "0.5"

@@ -25,7 +25,7 @@ impl Message for ProcessJob {
 
 pub struct LocalWorker<State>
 where
-    State: Clone + Send + Sync + 'static,
+    State: Clone + Send + 'static,
 {
     id: usize,
     queue: String,
@@ -35,7 +35,7 @@ where
 
 impl<State> LocalWorker<State>
 where
-    State: Clone + Send + Sync + 'static,
+    State: Clone + Send + 'static,
 {
     pub fn new(
         id: usize,
@@ -54,7 +54,7 @@ where
 
 impl<State> Actor for LocalWorker<State>
 where
-    State: Clone + Send + Sync + 'static,
+    State: Clone + Send + 'static,
 {
     type Context = Context<Self>;
 
@@ -66,7 +66,7 @@ where
 
 impl<State> Handler<ProcessJob> for LocalWorker<State>
 where
-    State: Clone + Send + Sync + 'static,
+    State: Clone + Send + 'static,
 {
     type Result = ();
 

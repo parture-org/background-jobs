@@ -33,7 +33,7 @@ use crate::{JobError, JobInfo, Processor};
 /// [`ProcessorMap`](https://docs.rs/background-jobs-core/0.4.0/background_jobs_core/struct.ProcessorMap.html)
 /// struct stores these `ProcessFn` types that don't expose differences in Job types.
 pub type ProcessFn =
-    Box<dyn Fn(Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send + Sync>;
+    Box<dyn Fn(Value) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send>;
 
 /// A type for storing the relationships between processor names and the processor itself
 ///
@@ -50,7 +50,7 @@ where
 
 impl<S> ProcessorMap<S>
 where
-    S: Clone + Send + Sync + 'static,
+    S: Clone + Send + 'static,
 {
     /// Intialize a `ProcessorMap`
     ///
@@ -72,7 +72,7 @@ where
     /// make sure to register all your processors up-front.
     pub fn register_processor<P>(&mut self, processor: P)
     where
-        P: Processor<S> + Send + Sync + 'static,
+        P: Processor<S> + Send + 'static,
     {
         let state = self.state.clone();
 
