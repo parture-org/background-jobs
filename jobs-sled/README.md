@@ -5,7 +5,7 @@ This is the default storage backend for the Background Jobs library based on [Sl
 
 ### License
 
-Copyright © 2018 Riley Trautman
+Copyright © 2019 Riley Trautman
 
 Background Jobs is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 

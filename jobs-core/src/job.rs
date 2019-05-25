@@ -1,7 +1,7 @@
 /*
  * This file is part of Background Jobs.
  *
- * Copyright © 2018 Riley Trautman
+ * Copyright © 2019 Riley Trautman
  *
  * Background Jobs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
