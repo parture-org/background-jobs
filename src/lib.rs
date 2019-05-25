@@ -29,7 +29,7 @@
 //! ```toml
 //! [dependencies]
 //! actix = "0.8"
-//! background-jobs = "0.5"
+//! background-jobs = "0.5.1"
 //! failure = "0.1"
 //! futures = "0.1"
 //! serde = "1.0"
