@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc};
 
 use actix::{Actor, Addr, SyncArbiter};
 use background_jobs_core::{Processor, ProcessorMap, Stats, Storage};
@@ -12,29 +12,29 @@ pub use self::{server::Server, worker::LocalWorker};
 
 use self::{
     pinger::Pinger,
-    server::{CheckDb, EitherJob, GetStats, RequestJob},
+    server::{CheckDb, GetStats, NewJob, RequestJob, ReturningJob},
     worker::ProcessJob,
 };
 
-pub struct ServerConfig {
-    server_id: usize,
-    db_path: PathBuf,
+pub struct ServerConfig<S> {
+    storage: S,
 }
 
-impl ServerConfig {
-    pub fn new(server_id: usize, db_path: PathBuf) -> Self {
-        ServerConfig { server_id, db_path }
+impl<S> ServerConfig<S>
+where
+    S: Storage + Sync + 'static,
+{
+    pub fn new(storage: S) -> Self {
+        ServerConfig { storage }
     }
 
-    pub fn start<S>(self) -> QueueHandle<S>
+    pub fn start<State>(self) -> QueueHandle<S, State>
     where
-        S: Clone + 'static,
+        State: Clone + 'static,
     {
-        let ServerConfig { server_id, db_path } = self;
+        let ServerConfig { storage } = self;
 
-        let server = SyncArbiter::start(1, move || {
-            Server::new(server_id, Storage::init(db_path.clone()).unwrap())
-        });
+        let server = SyncArbiter::start(4, move || Server::new(storage.clone()));
 
         Pinger::new(server.clone()).start();
 
@@ -42,19 +42,19 @@ impl ServerConfig {
     }
 }
 
-pub struct WorkerConfig<S>
+pub struct WorkerConfig<State>
 where
-    S: Clone + 'static,
+    State: Clone + 'static,
 {
-    processors: ProcessorMap<S>,
-    queues: BTreeMap<String, usize>,
+    processors: ProcessorMap<State>,
+    queues: BTreeMap<String, u64>,
 }
 
-impl<S> WorkerConfig<S>
+impl<State> WorkerConfig<State>
 where
-    S: Clone + 'static,
+    State: Clone + 'static,
 {
-    pub fn new(state_fn: impl Fn() -> S + Send + Sync + 'static) -> Self {
+    pub fn new(state_fn: impl Fn() -> State + Send + Sync + 'static) -> Self {
         WorkerConfig {
             processors: ProcessorMap::new(Box::new(state_fn)),
             queues: BTreeMap::new(),
@@ -63,17 +63,20 @@ where
 
     pub fn register<P>(&mut self, processor: P)
     where
-        P: Processor<S> + Send + 'static,
+        P: Processor<State> + Send + 'static,
     {
         self.queues.insert(P::QUEUE.to_owned(), 4);
         self.processors.register_processor(processor);
     }
 
-    pub fn set_processor_count(&mut self, queue: &str, count: usize) {
+    pub fn set_processor_count(&mut self, queue: &str, count: u64) {
         self.queues.insert(queue.to_owned(), count);
     }
 
-    pub fn start(self, queue_handle: QueueHandle<S>) {
+    pub fn start<S>(self, queue_handle: QueueHandle<S, State>)
+    where
+        S: Storage + 'static,
+    {
         let processors = Arc::new(self.processors);
 
         self.queues.into_iter().fold(0, |acc, (key, count)| {
@@ -93,22 +96,24 @@ where
 }
 
 #[derive(Clone)]
-pub struct QueueHandle<S>
+pub struct QueueHandle<S, State>
 where
-    S: Clone + 'static,
+    S: Storage + 'static,
+    State: Clone + 'static,
 {
-    inner: Addr<Server<LocalWorker<S>>>,
+    inner: Addr<Server<S, LocalWorker<S, State>>>,
 }
 
-impl<S> QueueHandle<S>
+impl<S, State> QueueHandle<S, State>
 where
-    S: Clone + 'static,
+    S: Storage + 'static,
+    State: Clone + 'static,
 {
     pub fn queue<P>(&self, job: P::Job) -> Result<(), Error>
     where
-        P: Processor<S>,
+        P: Processor<State>,
     {
-        self.inner.do_send(EitherJob::New(P::new_job(job)?));
+        self.inner.do_send(NewJob(P::new_job(job)?));
         Ok(())
     }
 

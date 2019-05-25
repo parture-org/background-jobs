@@ -4,10 +4,10 @@ use actix::{
     fut::{wrap_future, ActorFuture},
     Actor, Addr, AsyncContext, Context, Handler, Message,
 };
-use background_jobs_core::{JobInfo, ProcessorMap};
+use background_jobs_core::{JobInfo, ProcessorMap, Storage};
 use log::info;
 
-use crate::{EitherJob, RequestJob, Server};
+use crate::{RequestJob, ReturningJob, Server};
 
 pub struct ProcessJob {
     job: JobInfo,
@@ -23,25 +23,27 @@ impl Message for ProcessJob {
     type Result = ();
 }
 
-pub struct LocalWorker<State>
+pub struct LocalWorker<S, State>
 where
+    S: Storage + 'static,
     State: Clone + 'static,
 {
-    id: usize,
+    id: u64,
     queue: String,
     processors: Arc<ProcessorMap<State>>,
-    server: Addr<Server<LocalWorker<State>>>,
+    server: Addr<Server<S, LocalWorker<S, State>>>,
 }
 
-impl<State> LocalWorker<State>
+impl<S, State> LocalWorker<S, State>
 where
+    S: Storage + 'static,
     State: Clone + 'static,
 {
     pub fn new(
-        id: usize,
+        id: u64,
         queue: String,
         processors: Arc<ProcessorMap<State>>,
-        server: Addr<Server<Self>>,
+        server: Addr<Server<S, Self>>,
     ) -> Self {
         LocalWorker {
             id,
@@ -52,8 +54,9 @@ where
     }
 }
 
-impl<State> Actor for LocalWorker<State>
+impl<S, State> Actor for LocalWorker<S, State>
 where
+    S: Storage + 'static,
     State: Clone + 'static,
 {
     type Context = Context<Self>;
@@ -64,8 +67,9 @@ where
     }
 }
 
-impl<State> Handler<ProcessJob> for LocalWorker<State>
+impl<S, State> Handler<ProcessJob> for LocalWorker<S, State>
 where
+    S: Storage + 'static,
     State: Clone + 'static,
 {
     type Result = ();
@@ -74,7 +78,7 @@ where
         info!("Worker {} processing job {}", self.id, msg.job.id());
         let fut =
             wrap_future::<_, Self>(self.processors.process_job(msg.job)).map(|job, actor, ctx| {
-                actor.server.do_send(EitherJob::Existing(job));
+                actor.server.do_send(ReturningJob(job));
                 actor
                     .server
                     .do_send(RequestJob::new(actor.id, &actor.queue, ctx.address()));

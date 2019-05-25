@@ -273,7 +273,10 @@
 //! `background-jobs-core` crate, which provides the LMDB storage, Processor and Job traits, as well as some
 //! other useful types for implementing a jobs processor.
 
-pub use background_jobs_core::{Backoff, Job, JobStat, MaxRetries, Processor, Stat, Stats};
+pub use background_jobs_core::{Backoff, Job, JobStat, MaxRetries, Processor, Stats};
 
 #[cfg(feature = "background-jobs-actix")]
 pub use background_jobs_actix::{QueueHandle, ServerConfig, WorkerConfig};
+
+#[cfg(feature = "background-jobs-sled-storage")]
+pub use background_jobs_sled_storage::{SledStorage, Error as SledStorageError};

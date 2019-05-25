@@ -23,7 +23,7 @@ use futures::future::{Either, Future, IntoFuture};
 use log::{error, info};
 use serde_json::Value;
 
-use crate::{JobError, JobInfo, Processor};
+use crate::{JobError, JobInfo, Processor, ReturnJobInfo};
 
 /// A generic function that processes a job
 ///
@@ -34,7 +34,6 @@ use crate::{JobError, JobInfo, Processor};
 /// struct stores these `ProcessFn` types that don't expose differences in Job types.
 pub type ProcessFn<S> =
     Box<dyn Fn(Value, S) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send>;
-
 
 pub type StateFn<S> = Box<dyn Fn() -> S + Send + Sync>;
 
@@ -87,7 +86,7 @@ where
     ///
     /// This should not be called from outside implementations of a backgoround-jobs runtime. It is
     /// intended for internal use.
-    pub fn process_job(&self, job: JobInfo) -> impl Future<Item = JobInfo, Error = ()> {
+    pub fn process_job(&self, job: JobInfo) -> impl Future<Item = ReturnJobInfo, Error = ()> {
         let opt = self
             .inner
             .get(job.processor())
@@ -97,26 +96,28 @@ where
             Either::A(fut)
         } else {
             error!("Processor {} not present", job.processor());
-            Either::B(Ok(job).into_future())
+            Either::B(Ok(ReturnJobInfo::missing_processor(job.id())).into_future())
         }
     }
 }
 
-fn process<S>(process_fn: &ProcessFn<S>, state: S, mut job: JobInfo) -> impl Future<Item = JobInfo, Error = ()> {
+fn process<S>(
+    process_fn: &ProcessFn<S>,
+    state: S,
+    job: JobInfo,
+) -> impl Future<Item = ReturnJobInfo, Error = ()> {
     let args = job.args();
-
+    let id = job.id();
     let processor = job.processor().to_owned();
 
     process_fn(args, state).then(move |res| match res {
         Ok(_) => {
-            info!("Job {} completed, {}", job.id(), processor);
-            job.pass();
-            Ok(job)
+            info!("Job {} completed, {}", id, processor);
+            Ok(ReturnJobInfo::pass(id))
         }
         Err(e) => {
-            error!("Job {} errored, {}, {}", job.id(), processor, e);
-            job.fail();
-            Ok(job)
+            error!("Job {} errored, {}, {}", id, processor, e);
+            Ok(ReturnJobInfo::fail(id))
         }
     })
 }

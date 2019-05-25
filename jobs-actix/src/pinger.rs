@@ -1,29 +1,33 @@
 use std::time::Duration;
 
 use actix::{Actor, Addr, AsyncContext, Context, Handler, SyncContext};
+use background_jobs_core::Storage;
 
 use crate::{CheckDb, ProcessJob, Server};
 
-pub struct Pinger<W>
+pub struct Pinger<S, W>
 where
+    S: Storage + 'static,
     W: Actor + Handler<ProcessJob>,
 {
-    server: Addr<Server<W>>,
+    server: Addr<Server<S, W>>,
 }
 
-impl<W> Pinger<W>
+impl<S, W> Pinger<S, W>
 where
+    S: Storage + 'static,
     W: Actor + Handler<ProcessJob>,
 {
-    pub fn new(server: Addr<Server<W>>) -> Self {
+    pub fn new(server: Addr<Server<S, W>>) -> Self {
         Pinger { server }
     }
 }
 
-impl<W> Actor for Pinger<W>
+impl<S, W> Actor for Pinger<S, W>
 where
+    S: Storage + 'static,
     W: Actor + Handler<ProcessJob>,
-    Server<W>: Actor<Context = SyncContext<Server<W>>> + Handler<CheckDb>,
+    Server<S, W>: Actor<Context = SyncContext<Server<S, W>>> + Handler<CheckDb>,
 {
     type Context = Context<Self>;
 

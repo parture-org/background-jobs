@@ -24,14 +24,16 @@ mod job;
 mod job_info;
 mod processor;
 mod processor_map;
+mod stats;
 mod storage;
 
 pub use crate::{
     job::Job,
-    job_info::{JobInfo, NewJobInfo},
+    job_info::{JobInfo, NewJobInfo, ReturnJobInfo},
     processor::Processor,
     processor_map::ProcessorMap,
-    storage::{JobStat, Stat, Stats, Storage},
+    stats::{JobStat, Stats},
+    storage::Storage,
 };
 
 #[derive(Debug, Fail)]
@@ -51,22 +53,64 @@ pub enum JobError {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub enum JobResult {
+    Success,
+    Failure,
+    MissingProcessor,
+}
+
+impl JobResult {
+    pub fn success() -> Self {
+        JobResult::Success
+    }
+
+    pub fn failure() -> Self {
+        JobResult::Failure
+    }
+
+    pub fn missing_processor() -> Self {
+        JobResult::MissingProcessor
+    }
+
+    pub fn is_failure(&self) -> bool {
+        *self == JobResult::Failure
+    }
+
+    pub fn is_success(&self) -> bool {
+        *self == JobResult::Success
+    }
+
+    pub fn is_missing_processor(&self) -> bool {
+        *self == JobResult::MissingProcessor
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 /// Set the status of a job when storing it
 pub enum JobStatus {
     /// Job should be queued
     Pending,
 
-    /// Job has been dequeued, but is not yet running
-    Staged,
-
     /// Job is running
     Running,
+}
 
-    /// Job has failed
-    Failed,
+impl JobStatus {
+    pub fn pending() -> Self {
+        JobStatus::Pending
+    }
 
-    /// Job has finished
-    Finished,
+    pub fn running() -> Self {
+        JobStatus::Running
+    }
+
+    pub fn is_pending(&self) -> bool {
+        *self == JobStatus::Pending
+    }
+
+    pub fn is_running(&self) -> bool {
+        *self == JobStatus::Running
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]

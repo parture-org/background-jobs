@@ -22,7 +22,36 @@ use log::trace;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{Backoff, JobStatus, MaxRetries, ShouldStop};
+use crate::{Backoff, JobResult, JobStatus, MaxRetries, ShouldStop};
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ReturnJobInfo {
+    pub(crate) id: u64,
+    pub(crate) result: JobResult,
+}
+
+impl ReturnJobInfo {
+    pub(crate) fn fail(id: u64) -> Self {
+        ReturnJobInfo {
+            id,
+            result: JobResult::Failure,
+        }
+    }
+
+    pub(crate) fn pass(id: u64) -> Self {
+        ReturnJobInfo {
+            id,
+            result: JobResult::Success,
+        }
+    }
+
+    pub(crate) fn missing_processor(id: u64) -> Self {
+        ReturnJobInfo {
+            id,
+            result: JobResult::MissingProcessor,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct NewJobInfo {
@@ -67,7 +96,15 @@ impl NewJobInfo {
         }
     }
 
-    pub(crate) fn with_id(self, id: usize) -> JobInfo {
+    pub fn queue(&self) -> &str {
+        &self.queue
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.next_queue.is_none()
+    }
+
+    pub(crate) fn with_id(self, id: u64) -> JobInfo {
         JobInfo {
             id,
             processor: self.processor,
@@ -92,7 +129,7 @@ impl NewJobInfo {
 /// new_job method.
 pub struct JobInfo {
     /// ID of the job
-    id: usize,
+    id: u64,
 
     /// Name of the processor that should handle this job
     processor: String,
@@ -127,7 +164,7 @@ impl JobInfo {
         &self.queue
     }
 
-    pub(crate) fn updated(&mut self) {
+    fn updated(&mut self) {
         self.updated_at = Utc::now();
     }
 
@@ -139,20 +176,17 @@ impl JobInfo {
         self.args.clone()
     }
 
-    pub(crate) fn status(&self) -> JobStatus {
-        self.status.clone()
-    }
-
-    pub fn id(&self) -> usize {
+    pub fn id(&self) -> u64 {
         self.id
     }
 
     pub(crate) fn increment(&mut self) -> ShouldStop {
+        self.updated();
         self.retry_count += 1;
         self.max_retries.compare(self.retry_count)
     }
 
-    pub(crate) fn next_queue(&mut self) {
+    fn next_queue(&mut self) {
         let now = Utc::now();
 
         let next_queue = match self.backoff_strategy {
@@ -173,19 +207,15 @@ impl JobInfo {
         );
     }
 
-    pub(crate) fn is_stale(&self) -> bool {
-        self.updated_at < Utc::now() - OldDuration::days(1)
-    }
-
-    pub(crate) fn is_ready(&self, now: DateTime<Utc>) -> bool {
+    pub fn is_ready(&self, now: DateTime<Utc>) -> bool {
         match self.next_queue {
             Some(ref time) => now > *time,
             None => true,
         }
     }
 
-    pub fn needs_retry(&mut self) -> bool {
-        let should_retry = self.is_failed() && self.increment().should_requeue();
+    pub(crate) fn needs_retry(&mut self) -> bool {
+        let should_retry = self.increment().should_requeue();
 
         if should_retry {
             self.pending();
@@ -195,47 +225,21 @@ impl JobInfo {
         should_retry
     }
 
-    pub fn retry_ready(&self) -> bool {
-        self.is_ready(Utc::now())
-    }
-
     pub fn is_pending(&self) -> bool {
         self.status == JobStatus::Pending
-    }
-
-    pub fn is_failed(&self) -> bool {
-        self.status == JobStatus::Failed
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.status == JobStatus::Finished
     }
 
     pub(crate) fn is_in_queue(&self, queue: &str) -> bool {
         self.queue == queue
     }
 
-    pub(crate) fn stage(&mut self) {
-        self.status = JobStatus::Staged;
-    }
-
-    /// This method sets the Job's status to running
-    ///
-    /// Touching this outside of the background_jobs crates is dangerous, since these libraries
-    /// rely on the state of the job being correct.
-    pub fn set_running(&mut self) {
+    pub(crate) fn run(&mut self) {
+        self.updated();
         self.status = JobStatus::Running;
     }
 
     pub(crate) fn pending(&mut self) {
+        self.updated();
         self.status = JobStatus::Pending;
-    }
-
-    pub(crate) fn fail(&mut self) {
-        self.status = JobStatus::Failed;
-    }
-
-    pub(crate) fn pass(&mut self) {
-        self.status = JobStatus::Finished;
     }
 }
