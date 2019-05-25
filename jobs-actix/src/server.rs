@@ -173,11 +173,14 @@ where
         trace!("Checkdb");
 
         for (queue, workers) in self.cache.iter_mut() {
-            if let Some(request) = workers.pop_front() {
-                if let Some(job) = self.storage.request_job(queue, request.worker_id)? {
-                    request.addr.do_send(ProcessJob::new(job));
-                } else {
-                    workers.push_back(request);
+            while !workers.is_empty() {
+                if let Some(request) = workers.pop_front() {
+                    if let Some(job) = self.storage.request_job(queue, request.worker_id)? {
+                        request.addr.do_send(ProcessJob::new(job));
+                    } else {
+                        workers.push_back(request);
+                        break;
+                    }
                 }
             }
         }
