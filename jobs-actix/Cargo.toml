@@ -4,7 +4,7 @@ description = "in-process jobs processor based on Actix"
 version = "0.5.0"
 license = "GPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
-repository = "https://git.asonix.dog/asonix/background-jobs"
+repository = "https://git.asonix.dog/Aardwolf/background-jobs"
 keywords = ["jobs", "processor"]
 edition = "2018"
 

@@ -4,7 +4,7 @@ description = "Sled storage backend for background-jobs"
 version = "0.1.0"
 license = "GPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
-repository = "https://git.asonix.dog/asonix/background-jobs"
+repository = "https://git.asonix.dog/Aardwolf/background-jobs"
 readme = "README.md"
 edition = "2018"
 
