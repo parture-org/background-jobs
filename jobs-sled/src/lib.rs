@@ -1,4 +1,5 @@
 use background_jobs_core::{JobInfo, Storage, Stats};
+use chrono::offset::Utc;
 
 mod error;
 mod sled_wrappers;
@@ -41,12 +42,15 @@ impl Storage for SledStorage {
         let job_tree = self.jobinfo.clone();
 
         self.lock_queue(queue, move || {
+            let now = Utc::now();
+
             let job = queue_tree
                 .iter()
                 .filter_map(|res| res.ok())
                 .filter_map(|(id, in_queue)| if queue == in_queue { Some(id) } else { None })
                 .filter_map(|id| job_tree.get(id).ok())
                 .filter_map(|opt| opt)
+                .filter(|job| job.is_ready(now))
                 .next();
 
             if let Some(ref job) = job {
