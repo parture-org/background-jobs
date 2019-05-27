@@ -203,4 +203,4 @@ pub use background_jobs_core::{Backoff, Job, JobStat, MaxRetries, Processor, Sta
 pub use background_jobs_actix::{QueueHandle, ServerConfig, WorkerConfig};
 
 #[cfg(feature = "background-jobs-sled-storage")]
-pub use background_jobs_sled_storage::{SledStorage, Error as SledStorageError};
+pub use background_jobs_sled_storage::{Error as SledStorageError, SledStorage};

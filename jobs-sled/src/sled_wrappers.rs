@@ -19,14 +19,12 @@ where
 
     pub(crate) fn get<K>(&self, key: K) -> Result<Option<T>>
     where
-        K: AsRef<[u8]>
+        K: AsRef<[u8]>,
     {
         match self.0.get(key)? {
-            Some(vec) => {
-                serde_json::from_slice(&vec)
-                    .map_err(|_| Error::Deserialize)
-                    .map(Some)
-            },
+            Some(vec) => serde_json::from_slice(&vec)
+                .map_err(|_| Error::Deserialize)
+                .map(Some),
             None => Ok(None),
         }
     }
@@ -39,11 +37,9 @@ where
 
     pub(crate) fn del(&self, key: &str) -> Result<Option<T>> {
         match self.0.del(key)? {
-            Some(vec) => {
-                serde_json::from_slice(&vec)
-                    .map_err(|_| Error::Deserialize)
-                    .map(Some)
-            },
+            Some(vec) => serde_json::from_slice(&vec)
+                .map_err(|_| Error::Deserialize)
+                .map(Some),
             None => Ok(None),
         }
     }
@@ -55,29 +51,23 @@ where
         let final_opt = self.0.fetch_and_update(key, |opt| {
             let new_opt = match opt {
                 Some(vec) => {
-                    let t = serde_json::from_slice(&vec)
-                        .map(Some)
-                        .unwrap_or(None);
+                    let t = serde_json::from_slice(&vec).map(Some).unwrap_or(None);
 
                     (f)(t)
-                },
+                }
                 None => (f)(None),
             };
 
             match new_opt {
-                Some(t) => serde_json::to_vec(&t)
-                    .map(Some)
-                    .unwrap_or(None),
+                Some(t) => serde_json::to_vec(&t).map(Some).unwrap_or(None),
                 None => None,
             }
         })?;
 
         match final_opt {
-            Some(vec) => {
-                serde_json::from_slice(&vec)
-                    .map_err(|_| Error::Deserialize)
-                    .map(Some)
-            },
+            Some(vec) => serde_json::from_slice(&vec)
+                .map_err(|_| Error::Deserialize)
+                .map(Some),
             None => Ok(None),
         }
     }
@@ -93,7 +83,7 @@ impl<'a, T> Iter<'a, T> {
 
 impl<'a, T> Iterator for Iter<'a, T>
 where
-    T: serde::de::DeserializeOwned
+    T: serde::de::DeserializeOwned,
 {
     type Item = Result<(Vec<u8>, T)>;
 
@@ -110,7 +100,7 @@ where
 
 impl<'a, T> DoubleEndedIterator for Iter<'a, T>
 where
-    T: serde::de::DeserializeOwned
+    T: serde::de::DeserializeOwned,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.0.next_back().map(|res| {

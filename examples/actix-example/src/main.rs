@@ -1,7 +1,9 @@
 use actix::System;
-use background_jobs::{ServerConfig, SledStorage, WorkerConfig, Processor, Job, Backoff, MaxRetries};
+use background_jobs::{
+    Backoff, Job, MaxRetries, Processor, ServerConfig, SledStorage, WorkerConfig,
+};
 use failure::Error;
-use futures::{Future, future::ok};
+use futures::{future::ok, Future};
 use serde_derive::{Deserialize, Serialize};
 use sled::Db;
 
@@ -27,16 +29,16 @@ fn main() -> Result<(), Error> {
     let db = Db::start_default("my-sled-db")?;
     let storage = SledStorage::new(db)?;
 
-    let queue_handle = ServerConfig::new(storage).start();
+    let queue_handle = ServerConfig::new(storage).thread_count(2).start();
 
-    let mut worker_config = WorkerConfig::new(move || MyState::new("My App"));
-    worker_config.register(MyProcessor);
-    worker_config.set_processor_count(DEFAULT_QUEUE, 16);
-    worker_config.start(queue_handle.clone());
+    WorkerConfig::new(move || MyState::new("My App"))
+        .register(MyProcessor)
+        .set_processor_count(DEFAULT_QUEUE, 16)
+        .start(queue_handle.clone());
 
-    queue_handle.queue::<MyProcessor>(MyJob::new(1, 2))?;
-    queue_handle.queue::<MyProcessor>(MyJob::new(3, 4))?;
-    queue_handle.queue::<MyProcessor>(MyJob::new(5, 6))?;
+    queue_handle.queue::<MyProcessor, _>(MyJob::new(1, 2))?;
+    queue_handle.queue::<MyProcessor, _>(MyJob::new(3, 4))?;
+    queue_handle.queue::<MyProcessor, _>(MyJob::new(5, 6))?;
 
     sys.run()?;
     Ok(())

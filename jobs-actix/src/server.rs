@@ -1,18 +1,42 @@
 use std::collections::{HashMap, VecDeque};
 
-use actix::{Actor, Addr, Context, Handler, Message, SyncContext};
-use background_jobs_core::{NewJobInfo, ReturnJobInfo, Stats, Storage};
+use actix::{Actor, Handler, Message, SyncContext};
+use background_jobs_core::{NewJobInfo, ReturnJobInfo, Stats};
 use failure::Error;
 use log::trace;
 use serde_derive::Deserialize;
 
-use crate::ProcessJob;
+use crate::{ActixStorage, Worker};
+
+pub struct Server {
+    storage: Box<dyn ActixStorage + Send>,
+    cache: HashMap<String, VecDeque<Box<dyn Worker + Send>>>,
+}
+
+impl Server {
+    pub(crate) fn new(storage: impl ActixStorage + Send + 'static) -> Self {
+        Server {
+            storage: Box::new(storage),
+            cache: HashMap::new(),
+        }
+    }
+}
+
+impl Actor for Server {
+    type Context = SyncContext<Self>;
+}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct NewJob(pub(crate) NewJobInfo);
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ReturningJob(pub(crate) ReturnJobInfo);
+
+pub struct RequestJob(pub(crate) Box<dyn Worker + Send + 'static>);
+
+pub struct CheckDb;
+
+pub struct GetStats;
 
 impl Message for NewJob {
     type Result = Result<(), Error>;
@@ -22,82 +46,19 @@ impl Message for ReturningJob {
     type Result = Result<(), Error>;
 }
 
-pub struct RequestJob<W>
-where
-    W: Actor + Handler<ProcessJob>,
-{
-    worker_id: u64,
-    queue: String,
-    addr: Addr<W>,
-}
-
-impl<W> RequestJob<W>
-where
-    W: Actor + Handler<ProcessJob>,
-{
-    pub fn new(worker_id: u64, queue: &str, addr: Addr<W>) -> Self {
-        RequestJob {
-            worker_id,
-            queue: queue.to_owned(),
-            addr,
-        }
-    }
-}
-
-impl<W> Message for RequestJob<W>
-where
-    W: Actor + Handler<ProcessJob>,
-{
+impl Message for RequestJob {
     type Result = Result<(), Error>;
 }
-
-pub struct CheckDb;
 
 impl Message for CheckDb {
     type Result = Result<(), Error>;
 }
 
-pub struct GetStats;
-
 impl Message for GetStats {
     type Result = Result<Stats, Error>;
 }
 
-pub struct Server<S, W>
-where
-    S: Storage + 'static,
-    W: Actor + Handler<ProcessJob>,
-{
-    storage: S,
-    cache: HashMap<String, VecDeque<RequestJob<W>>>,
-}
-
-impl<S, W> Server<S, W>
-where
-    S: Storage + 'static,
-    W: Actor + Handler<ProcessJob>,
-{
-    pub fn new(storage: S) -> Self {
-        Server {
-            storage,
-            cache: HashMap::new(),
-        }
-    }
-}
-
-impl<S, W> Actor for Server<S, W>
-where
-    S: Storage + 'static,
-    W: Actor + Handler<ProcessJob>,
-{
-    type Context = SyncContext<Self>;
-}
-
-impl<S, W> Handler<NewJob> for Server<S, W>
-where
-    S: Storage + 'static,
-    W: Actor<Context = Context<W>> + Handler<ProcessJob>,
-{
+impl Handler<NewJob> for Server {
     type Result = Result<(), Error>;
 
     fn handle(&mut self, msg: NewJob, _: &mut Self::Context) -> Self::Result {
@@ -106,16 +67,13 @@ where
         self.storage.new_job(msg.0)?;
 
         if ready {
-            let entry = self
-                .cache
-                .entry(queue.clone())
-                .or_insert(VecDeque::new());
+            let entry = self.cache.entry(queue.clone()).or_insert(VecDeque::new());
 
-            if let Some(request) = entry.pop_front() {
-                if let Some(job) = self.storage.request_job(&queue, request.worker_id)? {
-                    request.addr.do_send(ProcessJob::new(job));
+            if let Some(worker) = entry.pop_front() {
+                if let Some(job) = self.storage.request_job(&queue, worker.id())? {
+                    worker.process_job(job);
                 } else {
-                    entry.push_back(request);
+                    entry.push_back(worker);
                 }
             }
         }
@@ -124,11 +82,7 @@ where
     }
 }
 
-impl<S, W> Handler<ReturningJob> for Server<S, W>
-where
-    S: Storage + 'static,
-    W: Actor<Context = Context<W>> + Handler<ProcessJob>,
-{
+impl Handler<ReturningJob> for Server {
     type Result = Result<(), Error>;
 
     fn handle(&mut self, msg: ReturningJob, _: &mut Self::Context) -> Self::Result {
@@ -136,37 +90,33 @@ where
     }
 }
 
-impl<S, W> Handler<RequestJob<W>> for Server<S, W>
-where
-    S: Storage + 'static,
-    W: Actor<Context = Context<W>> + Handler<ProcessJob>,
-{
+impl Handler<RequestJob> for Server {
     type Result = Result<(), Error>;
 
-    fn handle(&mut self, msg: RequestJob<W>, _: &mut Self::Context) -> Self::Result {
-        trace!("Worker {} requested job", msg.worker_id);
-        let job = self.storage.request_job(&msg.queue, msg.worker_id)?;
+    fn handle(&mut self, RequestJob(worker): RequestJob, _: &mut Self::Context) -> Self::Result {
+        trace!("Worker {} requested job", worker.id());
+        let job = self.storage.request_job(worker.queue(), worker.id())?;
 
         if let Some(job) = job {
-            msg.addr.do_send(ProcessJob::new(job.clone()));
+            worker.process_job(job.clone());
         } else {
-            trace!("storing worker {} for queue {}", msg.worker_id, msg.queue);
+            trace!(
+                "storing worker {} for queue {}",
+                worker.id(),
+                worker.queue()
+            );
             let entry = self
                 .cache
-                .entry(msg.queue.to_owned())
+                .entry(worker.queue().to_owned())
                 .or_insert(VecDeque::new());
-            entry.push_back(msg);
+            entry.push_back(worker);
         }
 
         Ok(())
     }
 }
 
-impl<S, W> Handler<CheckDb> for Server<S, W>
-where
-    S: Storage + 'static,
-    W: Actor<Context = Context<W>> + Handler<ProcessJob>,
-{
+impl Handler<CheckDb> for Server {
     type Result = Result<(), Error>;
 
     fn handle(&mut self, _: CheckDb, _: &mut Self::Context) -> Self::Result {
@@ -174,11 +124,11 @@ where
 
         for (queue, workers) in self.cache.iter_mut() {
             while !workers.is_empty() {
-                if let Some(request) = workers.pop_front() {
-                    if let Some(job) = self.storage.request_job(queue, request.worker_id)? {
-                        request.addr.do_send(ProcessJob::new(job));
+                if let Some(worker) = workers.pop_front() {
+                    if let Some(job) = self.storage.request_job(queue, worker.id())? {
+                        worker.process_job(job);
                     } else {
-                        workers.push_back(request);
+                        workers.push_back(worker);
                         break;
                     }
                 }
@@ -189,11 +139,7 @@ where
     }
 }
 
-impl<S, W> Handler<GetStats> for Server<S, W>
-where
-    S: Storage + 'static,
-    W: Actor<Context = Context<W>> + Handler<ProcessJob>,
-{
+impl Handler<GetStats> for Server {
     type Result = Result<Stats, Error>;
 
     fn handle(&mut self, _: GetStats, _: &mut Self::Context) -> Self::Result {

@@ -1,4 +1,4 @@
-use background_jobs_core::{JobInfo, Storage, Stats};
+use background_jobs_core::{JobInfo, Stats, Storage};
 use chrono::offset::Utc;
 
 mod error;
@@ -6,10 +6,7 @@ mod sled_wrappers;
 
 pub use error::Error;
 
-use self::{
-    error::Result,
-    sled_wrappers::Tree,
-};
+use self::{error::Result, sled_wrappers::Tree};
 
 #[derive(Clone)]
 pub struct SledStorage {
@@ -128,7 +125,7 @@ impl SledStorage {
     {
         let id = self.db.generate_id()?;
 
-        let mut prev; 
+        let mut prev;
         while {
             prev = self.lock.fetch_and_update(queue, move |opt| match opt {
                 Some(_) => opt,
@@ -160,4 +157,3 @@ where
 {
     db.open_tree(name).map(Tree::new)
 }
-

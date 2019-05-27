@@ -78,11 +78,7 @@ pub trait Storage: Clone + Send {
         Ok(id)
     }
 
-    fn request_job(
-        &mut self,
-        queue: &str,
-        runner_id: u64,
-    ) -> Result<Option<JobInfo>, Self::Error> {
+    fn request_job(&mut self, queue: &str, runner_id: u64) -> Result<Option<JobInfo>, Self::Error> {
         match self.fetch_job_from_queue(queue)? {
             Some(mut job) => {
                 if job.is_pending() && job.is_ready(Utc::now()) && job.is_in_queue(queue) {
