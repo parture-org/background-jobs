@@ -1,6 +1,6 @@
 use actix::System;
 use background_jobs::{
-    Backoff, Job, MaxRetries, Processor, ServerConfig, SledStorage, WorkerConfig,
+    Backoff, Job, MaxRetries, Processor, ServerConfig, SledStorage, WorkerConfig, QueueHandle,
 };
 use failure::Error;
 use futures::{future::ok, Future};
@@ -20,8 +20,8 @@ pub struct MyJob {
     other_usize: usize,
 }
 
-#[derive(Clone, Debug)]
-pub struct MyProcessor;
+#[derive(Clone)]
+pub struct MyProcessor(pub QueueHandle);
 
 fn main() -> Result<(), Error> {
     let sys = System::new("my-actix-system");
@@ -31,14 +31,16 @@ fn main() -> Result<(), Error> {
 
     let queue_handle = ServerConfig::new(storage).thread_count(2).start();
 
+    let processor = MyProcessor(queue_handle.clone());
+
     WorkerConfig::new(move || MyState::new("My App"))
-        .register(MyProcessor)
+        .register(processor.clone())
         .set_processor_count(DEFAULT_QUEUE, 16)
         .start(queue_handle.clone());
 
-    queue_handle.queue::<MyProcessor, _>(MyJob::new(1, 2))?;
-    queue_handle.queue::<MyProcessor, _>(MyJob::new(3, 4))?;
-    queue_handle.queue::<MyProcessor, _>(MyJob::new(5, 6))?;
+    processor.queue(MyJob::new(1, 2))?;
+    processor.queue(MyJob::new(3, 4))?;
+    processor.queue(MyJob::new(5, 6))?;
 
     sys.run()?;
     Ok(())
@@ -66,6 +68,12 @@ impl Job<MyState> for MyJob {
         println!("{}: args, {:?}", state.app_name, self);
 
         Box::new(ok(()))
+    }
+}
+
+impl MyProcessor {
+    fn queue(&self, job: <Self as Processor<MyState>>::Job) -> Result<(), Error> {
+        self.0.queue::<Self, _>(job)
     }
 }
 
