@@ -10,7 +10,7 @@ might not be the best experience.
 ```toml
 [dependencies]
 actix = "0.8"
-background-jobs = "0.5.1"
+background-jobs = "0.6.0"
 failure = "0.1"
 futures = "0.1"
 serde = "1.0"
@@ -24,6 +24,7 @@ operation. They implment the `Job`, `serde::Serialize`, and `serde::DeserializeO
 
 ```rust
 use background_jobs::Job;
+use failure::Error;
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -42,6 +43,9 @@ impl MyJob {
 }
 
 impl Job for MyJob {
+    type Processor = MyProcessor; // We will define this later
+    type State = ();
+
     fn run(self, _: ()) -> Box<dyn Future<Item = (), Error = Error> + Send> {
         info!("args: {:?}", self);
 
@@ -71,7 +75,10 @@ impl MyState {
     }
 }
 
-impl Job<MyState> for MyJob {
+impl Job for MyJob {
+    type Processor = MyProcessor; // We will define this later
+    type State = MyState;
+
     fn run(self, state: MyState) -> Box<dyn Future<Item = (), Error = Error> + Send> {
         info!("{}: args, {:?}", state.app_name, self);
 
@@ -92,7 +99,7 @@ const DEFAULT_QUEUE: &'static str = "default";
 #[derive(Clone, Debug)]
 pub struct MyProcessor;
 
-impl Processor<MyState> for MyProcessor {
+impl Processor for MyProcessor {
     // The kind of job this processor should execute
     type Job = MyJob;
 
@@ -128,7 +135,8 @@ spawning new jobs.
 
 `background-jobs-actix` on it's own doesn't have a mechanism for storing worker state. This
 can be implemented manually by implementing the `Storage` trait from `background-jobs-core`,
-or the `background-jobs-sled-storage` crate can be used to provide a
+the in-memory store provided in the `background-jobs-core` crate can be used, or the
+`background-jobs-sled-storage` crate can be used to provide a
 [Sled](https://github.com/spacejam/sled)-backed jobs store.
 
 With that out of the way, back to the examples:
@@ -136,7 +144,7 @@ With that out of the way, back to the examples:
 ##### Main
 ```rust
 use actix::System;
-use background_jobs::{ServerConfig, SledStorage, WorkerConfig};
+use background_jobs::{ServerConfig, WorkerConfig};
 use failure::Error;
 
 fn main() -> Result<(), Error> {
@@ -144,22 +152,31 @@ fn main() -> Result<(), Error> {
     let sys = System::new("my-actix-system");
 
     // Set up our Storage
+    // For this example, we use the default in-memory storage mechanism
+    use background_jobs::memory_storage::Storage;
+    let storage = Storage::new();
+
+    /*
+    // Optionally, a storage backend using the Sled database is provided
+    use sled::Db;
+    use background_jobs::sled_storage::Storage;
     let db = Db::start_default("my-sled-db")?;
-    let storage = SledStorage::new(db)?;
+    let storage = Storage::new(db)?;
+    */
 
     // Start the application server. This guards access to to the jobs store
-    let queue_handle = ServerConfig::new(storage).start();
+    let queue_handle = ServerConfig::new(storage).thread_count(8).start();
 
     // Configure and start our workers
-    let mut worker_config = WorkerConfig::new(move || MyState::new("My App"));
-    worker_config.register(MyProcessor);
-    worker_config.set_processor_count(DEFAULT_QUEUE, 16);
-    worker_config.start(queue_handle.clone());
+    WorkerConfig::new(move || MyState::new("My App"))
+        .register(MyProcessor(queue_handle.clone()))
+        .set_processor_count(DEFAULT_QUEUE, 16)
+        .start(queue_handle.clone());
 
     // Queue our jobs
-    queue_handle.queue::<MyProcessor>(MyJob::new(1, 2))?;
-    queue_handle.queue::<MyProcessor>(MyJob::new(3, 4))?;
-    queue_handle.queue::<MyProcessor>(MyJob::new(5, 6))?;
+    queue_handle.queue(MyJob::new(1, 2))?;
+    queue_handle.queue(MyJob::new(3, 4))?;
+    queue_handle.queue(MyJob::new(5, 6))?;
 
     // Block on Actix
     sys.run()?;

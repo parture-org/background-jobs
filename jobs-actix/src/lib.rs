@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use actix::{Actor, Addr, SyncArbiter};
-use background_jobs_core::{Processor, ProcessorMap, Stats, Storage};
+use background_jobs_core::{Job, Processor, ProcessorMap, Stats, Storage};
 use failure::Error;
 use futures::Future;
 
@@ -66,7 +66,7 @@ where
             Server::new(StorageWrapper(storage.clone()))
         });
 
-        Pinger::new(server.clone()).start();
+        Pinger::new(server.clone(), threads).start();
 
         QueueHandle { inner: server }
     }
@@ -91,11 +91,11 @@ where
         }
     }
 
-    pub fn register<P>(mut self, processor: P) -> Self
-    where
-        P: Processor<State> + Send + 'static,
-    {
-        self.queues.insert(P::QUEUE.to_owned(), 4);
+    pub fn register(
+        mut self,
+        processor: impl Processor<Job = impl Job<State = State> + Send + 'static> + Send + 'static,
+    ) -> Self {
+        self.queues.insert(processor.queue().to_owned(), 4);
         self.processors.register_processor(processor);
         self
     }
@@ -130,12 +130,11 @@ pub struct QueueHandle {
 }
 
 impl QueueHandle {
-    pub fn queue<P, State>(&self, job: P::Job) -> Result<(), Error>
+    pub fn queue<J>(&self, job: J) -> Result<(), Error>
     where
-        P: Processor<State>,
-        State: Clone,
+        J: Job,
     {
-        self.inner.do_send(NewJob(P::new_job(job)?));
+        self.inner.do_send(NewJob(J::Processor::new_job(job)?));
         Ok(())
     }
 

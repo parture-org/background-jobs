@@ -23,7 +23,7 @@ use futures::future::{Either, Future, IntoFuture};
 use log::{error, info};
 use serde_json::Value;
 
-use crate::{JobError, JobInfo, Processor, ReturnJobInfo};
+use crate::{Job, JobError, JobInfo, Processor, ReturnJobInfo};
 
 /// A generic function that processes a job
 ///
@@ -72,12 +72,12 @@ where
     ///
     /// `ProcessorMap`s are useless if no processors are registerd before workers are spawned, so
     /// make sure to register all your processors up-front.
-    pub fn register_processor<P>(&mut self, processor: P)
-    where
-        P: Processor<S> + Send + 'static,
-    {
+    pub fn register_processor(
+        &mut self,
+        processor: impl Processor<Job = impl Job<State = S> + 'static> + Send + 'static,
+    ) {
         self.inner.insert(
-            P::NAME.to_owned(),
+            processor.name().to_owned(),
             Box::new(move |value, state| processor.process(value, state)),
         );
     }

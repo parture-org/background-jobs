@@ -1,11 +1,10 @@
 use actix::System;
 use background_jobs::{
-    Backoff, Job, MaxRetries, Processor, ServerConfig, SledStorage, WorkerConfig, QueueHandle,
+    Backoff, Job, MaxRetries, Processor, QueueHandle, ServerConfig, WorkerConfig,
 };
 use failure::Error;
 use futures::{future::ok, Future};
 use serde_derive::{Deserialize, Serialize};
-use sled::Db;
 
 const DEFAULT_QUEUE: &'static str = "default";
 
@@ -24,24 +23,37 @@ pub struct MyJob {
 pub struct MyProcessor(pub QueueHandle);
 
 fn main() -> Result<(), Error> {
+    // First set up the Actix System to ensure we have a runtime to spawn jobs on.
     let sys = System::new("my-actix-system");
 
+    // Set up our Storage
+    // For this example, we use the default in-memory storage mechanism
+    use background_jobs::memory_storage::Storage;
+    let storage = Storage::new();
+
+    /*
+    // Optionally, a storage backend using the Sled database is provided
+    use sled::Db;
+    use background_jobs::sled_storage::Storage;
     let db = Db::start_default("my-sled-db")?;
-    let storage = SledStorage::new(db)?;
+    let storage = Storage::new(db)?;
+    */
 
-    let queue_handle = ServerConfig::new(storage).thread_count(2).start();
+    // Start the application server. This guards access to to the jobs store
+    let queue_handle = ServerConfig::new(storage).thread_count(8).start();
 
-    let processor = MyProcessor(queue_handle.clone());
-
+    // Configure and start our workers
     WorkerConfig::new(move || MyState::new("My App"))
-        .register(processor.clone())
+        .register(MyProcessor(queue_handle.clone()))
         .set_processor_count(DEFAULT_QUEUE, 16)
         .start(queue_handle.clone());
 
-    processor.queue(MyJob::new(1, 2))?;
-    processor.queue(MyJob::new(3, 4))?;
-    processor.queue(MyJob::new(5, 6))?;
+    // Queue our jobs
+    queue_handle.queue(MyJob::new(1, 2))?;
+    queue_handle.queue(MyJob::new(3, 4))?;
+    queue_handle.queue(MyJob::new(5, 6))?;
 
+    // Block on Actix
     sys.run()?;
     Ok(())
 }
@@ -63,7 +75,10 @@ impl MyJob {
     }
 }
 
-impl Job<MyState> for MyJob {
+impl Job for MyJob {
+    type Processor = MyProcessor;
+    type State = MyState;
+
     fn run(self, state: MyState) -> Box<dyn Future<Item = (), Error = Error> + Send> {
         println!("{}: args, {:?}", state.app_name, self);
 
@@ -71,13 +86,7 @@ impl Job<MyState> for MyJob {
     }
 }
 
-impl MyProcessor {
-    fn queue(&self, job: <Self as Processor<MyState>>::Job) -> Result<(), Error> {
-        self.0.queue::<Self, _>(job)
-    }
-}
-
-impl Processor<MyState> for MyProcessor {
+impl Processor for MyProcessor {
     // The kind of job this processor should execute
     type Job = MyJob;
 

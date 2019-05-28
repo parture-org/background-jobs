@@ -21,13 +21,17 @@ use failure::Error;
 use futures::Future;
 use serde::{de::DeserializeOwned, ser::Serialize};
 
-use crate::{Backoff, MaxRetries};
+use crate::{Backoff, MaxRetries, Processor};
 
 /// The Job trait defines parameters pertaining to an instance of background job
-pub trait Job<S = ()>: Serialize + DeserializeOwned
-where
-    S: Clone + 'static,
-{
+pub trait Job: Serialize + DeserializeOwned + 'static {
+    /// The processor this job is associated with. The job's processor can be used to create a
+    /// JobInfo from a job, which is used to serialize the job into a storage mechanism.
+    type Processor: Processor<Job = Self>;
+
+    /// The application state provided to this job at runtime.
+    type State: Clone + 'static;
+
     /// Users of this library must define what it means to run a job.
     ///
     /// This should contain all the logic needed to complete a job. If that means queuing more
@@ -37,7 +41,7 @@ where
     /// The state passed into this job is initialized at the start of the application. The state
     /// argument could be useful for containing a hook into something like r2d2, or the address of
     /// an actor in an actix-based system.
-    fn run(self, state: S) -> Box<dyn Future<Item = (), Error = Error> + Send>;
+    fn run(self, state: Self::State) -> Box<dyn Future<Item = (), Error = Error> + Send>;
 
     /// If this job should not use the default queue for its processor, this can be overridden in
     /// user-code.

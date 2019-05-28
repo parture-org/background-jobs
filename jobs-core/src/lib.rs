@@ -33,7 +33,7 @@ pub use crate::{
     processor::Processor,
     processor_map::ProcessorMap,
     stats::{JobStat, Stats},
-    storage::Storage,
+    storage::{memory_storage, Storage},
 };
 
 #[derive(Debug, Fail)]

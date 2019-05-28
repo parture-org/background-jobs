@@ -81,11 +81,8 @@ use crate::{Backoff, Job, JobError, MaxRetries, NewJobInfo};
 ///     Ok(())
 /// }
 /// ```
-pub trait Processor<S = ()>: Clone
-where
-    S: Clone + 'static,
-{
-    type Job: Job<S> + 'static;
+pub trait Processor: Clone {
+    type Job: Job + 'static;
 
     /// The name of the processor
     ///
@@ -175,7 +172,7 @@ where
     fn process(
         &self,
         args: Value,
-        state: S,
+        state: <Self::Job as Job>::State,
     ) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
         let res = serde_json::from_value::<Self::Job>(args);
 
@@ -185,6 +182,16 @@ where
         };
 
         Box::new(fut)
+    }
+
+    /// Hack to access Associated Constant from impl type
+    fn name(&self) -> &'static str {
+        Self::NAME
+    }
+
+    /// Hack to access Associated Constant from impl type
+    fn queue(&self) -> &'static str {
+        Self::QUEUE
     }
 }
 

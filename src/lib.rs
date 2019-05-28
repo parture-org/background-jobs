@@ -197,10 +197,14 @@
 //! `background-jobs-core` crate, which provides the Processor and Job traits, as well as some
 //! other useful types for implementing a jobs processor and job store.
 
-pub use background_jobs_core::{Backoff, Job, JobStat, MaxRetries, Processor, Stats};
+pub use background_jobs_core::{
+    memory_storage, Backoff, Job, JobStat, MaxRetries, Processor, Stats,
+};
 
 #[cfg(feature = "background-jobs-actix")]
 pub use background_jobs_actix::{QueueHandle, ServerConfig, WorkerConfig};
 
 #[cfg(feature = "background-jobs-sled-storage")]
-pub use background_jobs_sled_storage::{Error as SledStorageError, SledStorage};
+pub mod sled_storage {
+    pub use background_jobs_sled_storage::{Error, SledStorage as Storage};
+}

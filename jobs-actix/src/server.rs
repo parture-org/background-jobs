@@ -51,7 +51,7 @@ impl Message for RequestJob {
 }
 
 impl Message for CheckDb {
-    type Result = Result<(), Error>;
+    type Result = ();
 }
 
 impl Message for GetStats {
@@ -70,7 +70,7 @@ impl Handler<NewJob> for Server {
             let entry = self.cache.entry(queue.clone()).or_insert(VecDeque::new());
 
             if let Some(worker) = entry.pop_front() {
-                if let Some(job) = self.storage.request_job(&queue, worker.id())? {
+                if let Ok(Some(job)) = self.storage.request_job(&queue, worker.id()) {
                     worker.process_job(job);
                 } else {
                     entry.push_back(worker);
@@ -117,7 +117,7 @@ impl Handler<RequestJob> for Server {
 }
 
 impl Handler<CheckDb> for Server {
-    type Result = Result<(), Error>;
+    type Result = ();
 
     fn handle(&mut self, _: CheckDb, _: &mut Self::Context) -> Self::Result {
         trace!("Checkdb");
@@ -125,7 +125,7 @@ impl Handler<CheckDb> for Server {
         for (queue, workers) in self.cache.iter_mut() {
             while !workers.is_empty() {
                 if let Some(worker) = workers.pop_front() {
-                    if let Some(job) = self.storage.request_job(queue, worker.id())? {
+                    if let Ok(Some(job)) = self.storage.request_job(queue, worker.id()) {
                         worker.process_job(job);
                     } else {
                         workers.push_back(worker);
@@ -134,8 +134,6 @@ impl Handler<CheckDb> for Server {
                 }
             }
         }
-
-        Ok(())
     }
 }
 
