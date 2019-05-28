@@ -5,11 +5,13 @@ use background_jobs_core::{Job, Processor, ProcessorMap, Stats, Storage};
 use failure::Error;
 use futures::Future;
 
+mod every;
 mod pinger;
 mod server;
 mod storage;
 mod worker;
-pub use self::{server::Server, worker::LocalWorker};
+
+pub use self::{every::Every, server::Server, worker::LocalWorker};
 
 use self::{
     pinger::Pinger,
