@@ -11,7 +11,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-background-jobs-core = { version = "0.5", path = "../jobs-core" }
+background-jobs-core = { version = "0.6", path = "../jobs-core" }
 chrono = "0.4"
 failure = "0.1"
 sled = "0.24"

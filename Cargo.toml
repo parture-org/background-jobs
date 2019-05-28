@@ -21,7 +21,7 @@ members = [
 default = ["background-jobs-actix", "background-jobs-sled-storage"]
 
 [dependencies.background-jobs-core]
-version = "0.5"
+version = "0.6"
 path = "jobs-core"
 
 [dependencies.background-jobs-actix]
