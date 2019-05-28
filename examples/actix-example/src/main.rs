@@ -1,7 +1,5 @@
 use actix::System;
-use background_jobs::{
-    Backoff, Job, MaxRetries, Processor, QueueHandle, ServerConfig, WorkerConfig,
-};
+use background_jobs::{Backoff, Job, MaxRetries, Processor, ServerConfig, WorkerConfig};
 use failure::Error;
 use futures::{future::ok, Future};
 use serde_derive::{Deserialize, Serialize};
@@ -19,8 +17,8 @@ pub struct MyJob {
     other_usize: usize,
 }
 
-#[derive(Clone)]
-pub struct MyProcessor(pub QueueHandle);
+#[derive(Clone, Debug)]
+pub struct MyProcessor;
 
 fn main() -> Result<(), Error> {
     // First set up the Actix System to ensure we have a runtime to spawn jobs on.
@@ -44,7 +42,7 @@ fn main() -> Result<(), Error> {
 
     // Configure and start our workers
     WorkerConfig::new(move || MyState::new("My App"))
-        .register(MyProcessor(queue_handle.clone()))
+        .register(MyProcessor)
         .set_processor_count(DEFAULT_QUEUE, 16)
         .start(queue_handle.clone());
 

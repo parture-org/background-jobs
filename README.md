@@ -169,7 +169,7 @@ fn main() -> Result<(), Error> {
 
     // Configure and start our workers
     WorkerConfig::new(move || MyState::new("My App"))
-        .register(MyProcessor(queue_handle.clone()))
+        .register(MyProcessor)
         .set_processor_count(DEFAULT_QUEUE, 16)
         .start(queue_handle.clone());
 
