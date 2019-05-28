@@ -93,11 +93,12 @@ where
         }
     }
 
-    pub fn register(
-        mut self,
-        processor: impl Processor<Job = impl Job<State = State> + Send + 'static> + Send + 'static,
-    ) -> Self {
-        self.queues.insert(processor.queue().to_owned(), 4);
+    pub fn register<P, J>(mut self, processor: P) -> Self
+    where
+        P: Processor<Job = J> + Send + 'static,
+        J: Job<State = State>,
+    {
+        self.queues.insert(P::QUEUE.to_owned(), 4);
         self.processors.register_processor(processor);
         self
     }

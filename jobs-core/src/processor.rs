@@ -183,16 +183,6 @@ pub trait Processor: Clone {
 
         Box::new(fut)
     }
-
-    /// Hack to access Associated Constant from impl type
-    fn name(&self) -> &'static str {
-        Self::NAME
-    }
-
-    /// Hack to access Associated Constant from impl type
-    fn queue(&self) -> &'static str {
-        Self::QUEUE
-    }
 }
 
 #[derive(Clone, Debug, Fail)]

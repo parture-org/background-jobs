@@ -72,12 +72,13 @@ where
     ///
     /// `ProcessorMap`s are useless if no processors are registerd before workers are spawned, so
     /// make sure to register all your processors up-front.
-    pub fn register_processor(
-        &mut self,
-        processor: impl Processor<Job = impl Job<State = S> + 'static> + Send + 'static,
-    ) {
+    pub fn register_processor<P, J>(&mut self, processor: P)
+    where
+        P: Processor<Job = J> + Send + 'static,
+        J: Job<State = S>,
+    {
         self.inner.insert(
-            processor.name().to_owned(),
+            P::NAME.to_owned(),
             Box::new(move |value, state| processor.process(value, state)),
         );
     }
