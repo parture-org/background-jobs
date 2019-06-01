@@ -17,7 +17,7 @@
  * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use futures::future::{Either, Future, IntoFuture};
 use log::{error, info};
@@ -33,15 +33,16 @@ use crate::{Job, JobError, JobInfo, Processor, ReturnJobInfo};
 /// [`ProcessorMap`](https://docs.rs/background-jobs-core/0.4.0/background_jobs_core/struct.ProcessorMap.html)
 /// struct stores these `ProcessFn` types that don't expose differences in Job types.
 pub type ProcessFn<S> =
-    Box<dyn Fn(Value, S) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send>;
+    Arc<dyn Fn(Value, S) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send + Sync>;
 
-pub type StateFn<S> = Box<dyn Fn() -> S + Send + Sync>;
+pub type StateFn<S> = Arc<dyn Fn() -> S + Send + Sync>;
 
 /// A type for storing the relationships between processor names and the processor itself
 ///
 /// [`Processor`s](https://docs.rs/background-jobs/0.4.0/background_jobs/trait.Processor.html) must
 /// be registered with  the `ProcessorMap` in the initialization phase of an application before
 /// workers are spawned in order to handle queued jobs.
+#[derive(Clone)]
 pub struct ProcessorMap<S>
 where
     S: Clone,
@@ -74,12 +75,12 @@ where
     /// make sure to register all your processors up-front.
     pub fn register_processor<P, J>(&mut self, processor: P)
     where
-        P: Processor<Job = J> + Send + 'static,
+        P: Processor<Job = J> + Sync + Send + 'static,
         J: Job<State = S>,
     {
         self.inner.insert(
             P::NAME.to_owned(),
-            Box::new(move |value, state| processor.process(value, state)),
+            Arc::new(move |value, state| processor.process(value, state)),
         );
     }
 
