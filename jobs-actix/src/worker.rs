@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use actix::{
     dev::ToEnvelope,
     fut::{wrap_future, ActorFuture},
@@ -54,7 +52,7 @@ where
 {
     id: u64,
     queue: String,
-    processors: Arc<ProcessorMap<State>>,
+    processors: ProcessorMap<State>,
     server: Addr<S>,
 }
 
@@ -64,12 +62,7 @@ where
     S::Context: ToEnvelope<S, ReturningJob> + ToEnvelope<S, RequestJob>,
     State: Clone + 'static,
 {
-    pub fn new(
-        id: u64,
-        queue: String,
-        processors: Arc<ProcessorMap<State>>,
-        server: Addr<S>,
-    ) -> Self {
+    pub fn new(id: u64, queue: String, processors: ProcessorMap<State>, server: Addr<S>) -> Self {
         LocalWorker {
             id,
             queue,
