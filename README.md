@@ -5,6 +5,10 @@ synchronous application. The standard example of this is Web Services, where cer
 need to be processed, but processing them while a user is waiting for their browser to respond
 might not be the best experience.
 
+- [Read the documentation on docs.rs](https://docs.rs/background-jobs)
+- [Find the crate on crates.io](https://crates.io/crates/background-jobs)
+- [Join the discussion on Matrix](https://matrix.to/#/!vZKoAKLpHaFIWjRxpT:asonix.dog?via=asonix.dog)
+
 ### Usage
 #### Add Background Jobs to your project
 ```toml
