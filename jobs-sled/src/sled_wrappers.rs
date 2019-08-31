@@ -29,14 +29,14 @@ where
         }
     }
 
-    pub(crate) fn set(&self, key: &str, value: T) -> Result<Option<T>> {
+    pub(crate) fn insert(&self, key: &str, value: T) -> Result<Option<T>> {
         let vec = serde_json::to_vec(&value).map_err(|_| Error::Serialize)?;
 
-        Ok(self.0.set(key, vec)?.map(move |_| value))
+        Ok(self.0.insert(key, vec)?.map(move |_| value))
     }
 
-    pub(crate) fn del(&self, key: &str) -> Result<Option<T>> {
-        match self.0.del(key)? {
+    pub(crate) fn remove(&self, key: &str) -> Result<Option<T>> {
+        match self.0.remove(key)? {
             Some(vec) => serde_json::from_slice(&vec)
                 .map_err(|_| Error::Deserialize)
                 .map(Some),
@@ -85,7 +85,7 @@ impl<'a, T> Iterator for Iter<'a, T>
 where
     T: serde::de::DeserializeOwned,
 {
-    type Item = Result<(Vec<u8>, T)>;
+    type Item = Result<(sled::IVec, T)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(|res| {

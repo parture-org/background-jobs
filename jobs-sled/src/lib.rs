@@ -27,7 +27,7 @@ impl Storage for SledStorage {
     }
 
     fn save_job(&mut self, job: JobInfo) -> Result<()> {
-        self.jobinfo.set(&job_key(job.id()), job).map(|_| ())
+        self.jobinfo.insert(&job_key(job.id()), job).map(|_| ())
     }
 
     fn fetch_job(&mut self, id: u64) -> Result<Option<JobInfo>> {
@@ -51,7 +51,7 @@ impl Storage for SledStorage {
                 .next();
 
             if let Some(ref job) = job {
-                queue_tree.del(&job_key(job.id()))?;
+                queue_tree.remove(&job_key(job.id()))?;
             }
 
             Ok(job)
@@ -59,27 +59,29 @@ impl Storage for SledStorage {
     }
 
     fn queue_job(&mut self, queue: &str, id: u64) -> Result<()> {
-        if let Some(runner_id) = self.running_inverse.del(&job_key(id))? {
-            self.running.del(&runner_key(runner_id))?;
+        if let Some(runner_id) = self.running_inverse.remove(&job_key(id))? {
+            self.running.remove(&runner_key(runner_id))?;
         }
 
-        self.queue.set(&job_key(id), queue.to_owned()).map(|_| ())
+        self.queue
+            .insert(&job_key(id), queue.to_owned())
+            .map(|_| ())
     }
 
     fn run_job(&mut self, id: u64, runner_id: u64) -> Result<()> {
-        self.queue.del(&job_key(id))?;
-        self.running.set(&runner_key(runner_id), id)?;
-        self.running_inverse.set(&job_key(id), runner_id)?;
+        self.queue.remove(&job_key(id))?;
+        self.running.insert(&runner_key(runner_id), id)?;
+        self.running_inverse.insert(&job_key(id), runner_id)?;
 
         Ok(())
     }
 
     fn delete_job(&mut self, id: u64) -> Result<()> {
-        self.jobinfo.del(&job_key(id))?;
-        self.queue.del(&job_key(id))?;
+        self.jobinfo.remove(&job_key(id))?;
+        self.queue.remove(&job_key(id))?;
 
-        if let Some(runner_id) = self.running_inverse.del(&job_key(id))? {
-            self.running.del(&runner_key(runner_id))?;
+        if let Some(runner_id) = self.running_inverse.remove(&job_key(id))? {
+            self.running.remove(&runner_key(runner_id))?;
         }
 
         Ok(())

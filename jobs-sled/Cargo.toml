@@ -14,6 +14,6 @@ edition = "2018"
 background-jobs-core = { version = "0.6", path = "../jobs-core" }
 chrono = "0.4"
 failure = "0.1"
-sled = "0.24"
+sled = "0.26"
 serde = "1.0"
 serde_json = "1.0"
