@@ -66,7 +66,7 @@ use crate::{Backoff, Job, JobError, MaxRetries, NewJobInfo};
 /// #[derive(Clone)]
 /// struct MyProcessor;
 ///
-/// impl Processor<()> for MyProcessor {
+/// impl Processor for MyProcessor {
 ///     type Job = MyJob;
 ///
 ///     const NAME: &'static str = "IncrementProcessor";

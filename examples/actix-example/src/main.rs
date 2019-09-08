@@ -31,9 +31,9 @@ fn main() -> Result<(), Error> {
 
     /*
     // Optionally, a storage backend using the Sled database is provided
-    use sled::Db;
     use background_jobs::sled_storage::Storage;
-    let db = Db::start_default("my-sled-db")?;
+    use sled_extensions::Db;
+    let db = Db::open("my-sled-db")?;
     let storage = Storage::new(db)?;
     */
 

@@ -1,37 +1,37 @@
 use background_jobs_core::{JobInfo, Stats, Storage};
 use chrono::offset::Utc;
+use sled_extensions::{BincodeTree, CborTree, Db};
 
-mod error;
-mod sled_wrappers;
+pub use sled_extensions::Error;
 
-pub use error::Error;
-
-use self::{error::Result, sled_wrappers::Tree};
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone)]
 pub struct SledStorage {
-    jobinfo: Tree<JobInfo>,
-    running: Tree<u64>,
-    running_inverse: Tree<u64>,
-    queue: Tree<String>,
-    stats: Tree<Stats>,
-    lock: Tree<u64>,
-    db: sled::Db,
+    jobinfo: CborTree<JobInfo>,
+    running: BincodeTree<u64>,
+    running_inverse: BincodeTree<u64>,
+    queue: BincodeTree<String>,
+    stats: BincodeTree<Stats>,
+    lock: BincodeTree<u64>,
+    db: Db,
 }
 
 impl Storage for SledStorage {
     type Error = Error;
 
     fn generate_id(&mut self) -> Result<u64> {
-        self.db.generate_id().map_err(Error::from)
+        self.db.generate_id()
     }
 
     fn save_job(&mut self, job: JobInfo) -> Result<()> {
-        self.jobinfo.insert(&job_key(job.id()), job).map(|_| ())
+        self.jobinfo
+            .insert(job_key(job.id()).as_bytes(), job)
+            .map(|_| ())
     }
 
     fn fetch_job(&mut self, id: u64) -> Result<Option<JobInfo>> {
-        self.jobinfo.get(&job_key(id))
+        self.jobinfo.get(job_key(id))
     }
 
     fn fetch_job_from_queue(&mut self, queue: &str) -> Result<Option<JobInfo>> {
@@ -64,14 +64,15 @@ impl Storage for SledStorage {
         }
 
         self.queue
-            .insert(&job_key(id), queue.to_owned())
+            .insert(job_key(id).as_bytes(), queue.to_owned())
             .map(|_| ())
     }
 
     fn run_job(&mut self, id: u64, runner_id: u64) -> Result<()> {
-        self.queue.remove(&job_key(id))?;
-        self.running.insert(&runner_key(runner_id), id)?;
-        self.running_inverse.insert(&job_key(id), runner_id)?;
+        self.queue.remove(job_key(id))?;
+        self.running.insert(runner_key(runner_id).as_bytes(), id)?;
+        self.running_inverse
+            .insert(job_key(id).as_bytes(), runner_id)?;
 
         Ok(())
     }
@@ -109,14 +110,14 @@ impl Storage for SledStorage {
 }
 
 impl SledStorage {
-    pub fn new(db: sled::Db) -> Result<Self> {
+    pub fn new(db: Db) -> Result<Self> {
         Ok(SledStorage {
-            jobinfo: open_tree(&db, "background-jobs-jobinfo")?,
-            running: open_tree(&db, "background-jobs-running")?,
-            running_inverse: open_tree(&db, "background-jobs-running-inverse")?,
-            queue: open_tree(&db, "background-jobs-queue")?,
-            stats: open_tree(&db, "background-jobs-stats")?,
-            lock: open_tree(&db, "background-jobs-lock")?,
+            jobinfo: db.open_cbor_tree("background-jobs-jobinfo")?,
+            running: db.open_bincode_tree("background-jobs-running")?,
+            running_inverse: db.open_bincode_tree("background-jobs-running-inverse")?,
+            queue: db.open_bincode_tree("background-jobs-queue")?,
+            stats: db.open_bincode_tree("background-jobs-stats")?,
+            lock: db.open_bincode_tree("background-jobs-lock")?,
             db,
         })
     }
@@ -151,11 +152,4 @@ fn job_key(id: u64) -> String {
 
 fn runner_key(runner_id: u64) -> String {
     format!("runner-{}", runner_id)
-}
-
-fn open_tree<T>(db: &sled::Db, name: &str) -> sled::Result<Tree<T>>
-where
-    T: serde::de::DeserializeOwned + serde::ser::Serialize,
-{
-    db.open_tree(name).map(Tree::new)
 }
