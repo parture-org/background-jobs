@@ -19,7 +19,7 @@ failure = "0.1"
 futures = "0.1"
 serde = "1.0"
 serde_drive = "1.0"
-sled = "0.24"
+sled-extensions = "0.1"
 ```
 
 #### To get started with Background Jobs, first you should define a job.
@@ -164,7 +164,7 @@ fn main() -> Result<(), Error> {
     // Optionally, a storage backend using the Sled database is provided
     use sled::Db;
     use background_jobs::sled_storage::Storage;
-    let db = Db::start_default("my-sled-db")?;
+    let db = Db::open("my-sled-db")?;
     let storage = Storage::new(db)?;
     */
 
