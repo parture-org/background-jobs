@@ -1,19 +1,17 @@
 use background_jobs_core::{JobInfo, Stats, Storage};
 use chrono::offset::Utc;
-use sled_extensions::{BincodeTree, CborTree, Db};
+use sled_extensions::{structured::{cbor, bincode::Tree}, Db, DbExt};
 
-pub use sled_extensions::Error;
-
-type Result<T> = std::result::Result<T, Error>;
+pub use sled_extensions::error::{Result, Error};
 
 #[derive(Clone)]
 pub struct SledStorage {
-    jobinfo: CborTree<JobInfo>,
-    running: BincodeTree<u64>,
-    running_inverse: BincodeTree<u64>,
-    queue: BincodeTree<String>,
-    stats: BincodeTree<Stats>,
-    lock: BincodeTree<u64>,
+    jobinfo: cbor::Tree<JobInfo>,
+    running: Tree<u64>,
+    running_inverse: Tree<u64>,
+    queue: Tree<String>,
+    stats: Tree<Stats>,
+    lock: Tree<u64>,
     db: Db,
 }
 
@@ -21,7 +19,7 @@ impl Storage for SledStorage {
     type Error = Error;
 
     fn generate_id(&mut self) -> Result<u64> {
-        self.db.generate_id()
+        Ok(self.db.generate_id()?)
     }
 
     fn save_job(&mut self, job: JobInfo) -> Result<()> {

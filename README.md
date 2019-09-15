@@ -200,11 +200,12 @@ other useful types for implementing a jobs processor and job store.
 Feel free to open issues for anything you find an issue with. Please note that any contributed code will be licensed under the GPLv3.
 
 ### License
-
-Copyright © 2019 Riley Trautman
-
-Background Jobs is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-
-Background Jobs is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details. This file is part of Background Jobs.
-
-You should have received a copy of the GNU General Public License along with Background Jobs. If not, see [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
+This work is licensed under the Cooperative Software License. This is not a Free Software
+License, but may be considered a "source-available License." For most hobbyists, self-employed
+developers, worker-owned companies, and cooperatives, this software can be used in most
+projects so long as this software is distributed under the terms of the CSL. For more
+information, see the provided LICENSE file. If none exists, the license can be found online
+[here](https://lynnesbian.space/csl/). If you are a free software project and wish to use this
+software under the terms of the GNU Affero General Public License, please contact me at
+[asonix@asonix.dog](mailto:asonix@asonix.dog) and we can sort that out. If you wish to use this
+project under any other license, especially in proprietary software, the answer is likely no.

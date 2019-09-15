@@ -2,7 +2,7 @@
 name = "background-jobs"
 description = "Background Jobs implemented with sled, actix, and futures"
 version = "0.6.0"
-license = "GPL-3.0"
+license-file = "LICENSE"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/Aardwolf/background-jobs"
 readme = "README.md"
