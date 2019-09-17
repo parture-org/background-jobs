@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use actix::{Actor, Addr, Arbiter, SyncArbiter};
 use background_jobs_core::{Job, Processor, ProcessorMap, Stats, Storage};
-use failure::Error;
+use failure::{Error, Fail};
 use futures::Future;
 
 mod every;
@@ -28,7 +28,7 @@ pub struct ServerConfig<S> {
 impl<S> ServerConfig<S>
 where
     S: Storage + Sync + 'static,
-    S::Error: Send + Sync,
+    S::Error: Fail,
 {
     /// Create a new ServerConfig
     pub fn new(storage: S) -> Self {
