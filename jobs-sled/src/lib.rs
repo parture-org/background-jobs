@@ -1,8 +1,8 @@
 use background_jobs_core::{JobInfo, Stats, Storage};
 use chrono::offset::Utc;
-use sled_extensions::{structured::{cbor, bincode::Tree}, Db, DbExt};
+use sled_extensions::{bincode::Tree, cbor, Db, DbExt};
 
-pub use sled_extensions::error::{Result, Error};
+pub use sled_extensions::{Error, Result};
 
 #[derive(Clone)]
 pub struct SledStorage {

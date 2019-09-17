@@ -28,6 +28,7 @@ pub struct ServerConfig<S> {
 impl<S> ServerConfig<S>
 where
     S: Storage + Sync + 'static,
+    S::Error: Send + Sync,
 {
     /// Create a new ServerConfig
     pub fn new(storage: S) -> Self {

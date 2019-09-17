@@ -1,5 +1,5 @@
 use background_jobs_core::{JobInfo, NewJobInfo, ReturnJobInfo, Stats, Storage};
-use failure::{Error, Fail};
+use failure::Error;
 
 pub(crate) trait ActixStorage {
     fn new_job(&mut self, job: NewJobInfo) -> Result<u64, Error>;
@@ -14,12 +14,14 @@ pub(crate) trait ActixStorage {
 pub(crate) struct StorageWrapper<S, E>(pub(crate) S)
 where
     S: Storage<Error = E>,
-    E: Fail;
+    S::Error: Send,
+    E: std::error::Error + Send;
 
 impl<S, E> ActixStorage for StorageWrapper<S, E>
 where
     S: Storage<Error = E>,
-    E: Fail,
+    S::Error: Send,
+    E: std::error::Error + Send + Sync + 'static,
 {
     fn new_job(&mut self, job: NewJobInfo) -> Result<u64, Error> {
         self.0.new_job(job).map_err(Error::from)

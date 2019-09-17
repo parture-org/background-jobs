@@ -11,6 +11,6 @@ actix = "0.8"
 background-jobs = { version = "0.6.0", path = "../.." }
 failure = "0.1"
 futures = "0.1"
-sled-extensions = { version = "0.1.0", git = "https://git.asonix.dog/asonix/sled-extensions" }
+sled-extensions = "0.1.0"
 serde = "1.0"
 serde_derive = "1.0"

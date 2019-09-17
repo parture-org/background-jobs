@@ -18,7 +18,6 @@
  */
 
 use chrono::offset::Utc;
-use failure::Fail;
 use log::error;
 
 use crate::{JobInfo, NewJobInfo, ReturnJobInfo, Stats};
@@ -31,7 +30,7 @@ use crate::{JobInfo, NewJobInfo, ReturnJobInfo, Stats};
 /// the `background-jobs-sled-storage` crate.
 pub trait Storage: Clone + Send {
     /// The error type used by the storage mechansim.
-    type Error: Fail;
+    type Error: std::error::Error;
 
     /// This method generates unique IDs for jobs
     fn generate_id(&mut self) -> Result<u64, Self::Error>;
@@ -265,11 +264,17 @@ pub mod memory_storage {
         }
     }
 
-    #[derive(Clone, Debug, Fail)]
+    #[derive(Clone, Debug)]
     pub enum Never {}
 
     impl fmt::Display for Never {
         fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
+            match *self {}
+        }
+    }
+
+    impl std::error::Error for Never {
+        fn description(&self) -> &str {
             match *self {}
         }
     }

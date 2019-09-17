@@ -13,4 +13,4 @@ edition = "2018"
 [dependencies]
 background-jobs-core = { version = "0.6", path = "../jobs-core" }
 chrono = "0.4"
-sled-extensions = { version = "0.1", git = "https://git.asonix.dog/asonix/sled-extensions", features = ["bincode", "cbor"] }
+sled-extensions = { version = "0.1", features = ["bincode", "cbor"] }
