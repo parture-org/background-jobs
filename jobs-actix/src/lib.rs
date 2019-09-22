@@ -11,7 +11,7 @@
 //! used. By default, the number of cores of the running system is used.
 //!
 //! ### Example
-//! ```rust
+//! ```rust,ignore
 //! use actix::System;
 //! use background_jobs::{Backoff, Job, MaxRetries, Processor, ServerConfig, WorkerConfig};
 //! use failure::Error;

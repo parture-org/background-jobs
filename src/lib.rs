@@ -92,11 +92,15 @@
 //!     }
 //! }
 //!
-//! impl Job<MyState> for MyJob {
-//!     fn run(self, state: MyState) -> Box<dyn Future<Item = (), Error = Error> + Send> {
+//! impl Job for MyJob {
+//!     type Processor = MyProcessor;
+//!     type State = MyState;
+//!     type Future = Result<(), Error>;
+//!
+//!     fn run(self, state: Self::State) -> Self::Future {
 //!         info!("{}: args, {:?}", state.app_name, self);
 //!
-//!         Box::new(Ok(()).into_future())
+//!         Ok(())
 //!     }
 //! }
 //! ```
@@ -113,7 +117,7 @@
 //! #[derive(Clone, Debug)]
 //! pub struct MyProcessor;
 //!
-//! impl Processor<MyState> for MyProcessor {
+//! impl Processor for MyProcessor {
 //!     // The kind of job this processor should execute
 //!     type Job = MyJob;
 //!
@@ -157,8 +161,9 @@
 //! ##### Main
 //! ```rust,ignore
 //! use actix::System;
-//! use background_jobs::{ServerConfig, SledStorage, WorkerConfig};
+//! use background_jobs::{ServerConfig, sled_storage::Storage, WorkerConfig};
 //! use failure::Error;
+//! use sled::Db;
 //!
 //! fn main() -> Result<(), Error> {
 //!     // First set up the Actix System to ensure we have a runtime to spawn jobs on.
@@ -166,16 +171,16 @@
 //!
 //!     // Set up our Storage
 //!     let db = Db::start_default("my-sled-db")?;
-//!     let storage = SledStorage::new(db)?;
+//!     let storage = Storage::new(db)?;
 //!
 //!     // Start the application server. This guards access to to the jobs store
 //!     let queue_handle = ServerConfig::new(storage).start();
 //!
 //!     // Configure and start our workers
-//!     let mut worker_config = WorkerConfig::new(move || MyState::new("My App"));
-//!     worker_config.register(MyProcessor);
-//!     worker_config.set_processor_count(DEFAULT_QUEUE, 16);
-//!     worker_config.start(queue_handle.clone());
+//!     WorkerConfig::new(move || MyState::new("My App"))
+//!         .register(MyProcessor)
+//!         .set_processor_count(DEFAULT_QUEUE, 16)
+//!         .start(queue_handle.clone());
 //!
 //!     // Queue our jobs
 //!     queue_handle.queue::<MyProcessor>(MyJob::new(1, 2))?;

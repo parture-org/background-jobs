@@ -4,12 +4,12 @@
 //! _An implementation of the Background Jobs Storage trait based on the Sled embedded database_
 //!
 //! ### Usage
-//! ```rust
+//! ```rust,ignore
 //! use background_jobs::{ServerConfig, sled_storage::Storage};
 //! use sled_extensions::{ConfigBuilder, Db};
 //!
 //! let db = Db::start(ConfigBuilder::default().temporary(true).build())?;
-//! let storage = Storagege::new(db)?;
+//! let storage = Storage::new(db)?;
 //! let queue_handle = ServerConfig::new(storage).thread_count(8).start();
 //! ```
 
