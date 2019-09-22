@@ -1,3 +1,18 @@
+#![deny(missing_docs)]
+
+//! # Background Jobs Sled Storage
+//! _An implementation of the Background Jobs Storage trait based on the Sled embedded database_
+//!
+//! ### Usage
+//! ```rust
+//! use background_jobs::{ServerConfig, sled_storage::Storage};
+//! use sled_extensions::{ConfigBuilder, Db};
+//!
+//! let db = Db::start(ConfigBuilder::default().temporary(true).build())?;
+//! let storage = Storagege::new(db)?;
+//! let queue_handle = ServerConfig::new(storage).thread_count(8).start();
+//! ```
+
 use background_jobs_core::{JobInfo, Stats, Storage};
 use chrono::offset::Utc;
 use sled_extensions::{bincode::Tree, cbor, Db, DbExt};
@@ -5,6 +20,7 @@ use sled_extensions::{bincode::Tree, cbor, Db, DbExt};
 pub use sled_extensions::{Error, Result};
 
 #[derive(Clone)]
+/// The Sled-backed storage implementation
 pub struct SledStorage {
     jobinfo: cbor::Tree<JobInfo>,
     running: Tree<u64>,
@@ -108,6 +124,7 @@ impl Storage for SledStorage {
 }
 
 impl SledStorage {
+    /// Create a new Storage struct
     pub fn new(db: Db) -> Result<Self> {
         Ok(SledStorage {
             jobinfo: db.open_cbor_tree("background-jobs-jobinfo")?,

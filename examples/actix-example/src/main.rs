@@ -1,7 +1,6 @@
 use actix::System;
 use background_jobs::{Backoff, Job, MaxRetries, Processor, ServerConfig, WorkerConfig};
 use failure::Error;
-use futures::{future::ok, Future};
 use serde_derive::{Deserialize, Serialize};
 
 const DEFAULT_QUEUE: &'static str = "default";
@@ -76,11 +75,12 @@ impl MyJob {
 impl Job for MyJob {
     type Processor = MyProcessor;
     type State = MyState;
+    type Future = Result<(), Error>;
 
-    fn run(self, state: MyState) -> Box<dyn Future<Item = (), Error = Error> + Send> {
+    fn run(self, state: MyState) -> Self::Future {
         println!("{}: args, {:?}", state.app_name, self);
 
-        Box::new(ok(()))
+        Ok(())
     }
 }
 
