@@ -29,12 +29,12 @@
 //! ```toml
 //! [dependencies]
 //! actix = "0.8"
-//! background-jobs = "0.5.1"
+//! background-jobs = "0.6.0"
 //! failure = "0.1"
 //! futures = "0.1"
 //! serde = "1.0"
 //! serde_drive = "1.0"
-//! sled = "0.24"
+//! sled = "0.28"
 //! ```
 //!
 //! #### To get started with Background Jobs, first you should define a job.
@@ -62,10 +62,14 @@
 //! }
 //!
 //! impl Job for MyJob {
-//!     fn run(self, _: ()) -> Box<dyn Future<Item = (), Error = Error> + Send> {
+//!     type Processor = MyProcessor; // We'll define this later
+//!     type State = ();
+//!     type Future = Result<(), Error>;
+//!
+//!     fn run(self, _: Self::State) -> Self::Future {
 //!         println!("args: {:?}", self);
 //!
-//!         Box::new(Ok(()).into_future())
+//!         Ok(())
 //!     }
 //! }
 //! ```

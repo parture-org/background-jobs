@@ -19,7 +19,7 @@ failure = "0.1"
 futures = "0.1"
 serde = "1.0"
 serde_drive = "1.0"
-sled = "0.1"
+sled = "0.28"
 ```
 
 #### To get started with Background Jobs, first you should define a job.
