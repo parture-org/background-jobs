@@ -1,22 +1,3 @@
-/*
- * This file is part of Background Jobs.
- *
- * Copyright © 2019 Riley Trautman
- *
- * Background Jobs is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Background Jobs is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
- */
-
 use chrono::{offset::Utc, DateTime};
 use failure::{Error, Fail};
 use futures::{
@@ -46,7 +27,7 @@ use crate::{Backoff, Job, JobError, MaxRetries, NewJobInfo};
 /// ```rust
 /// use background_jobs_core::{Backoff, Job, MaxRetries, Processor};
 /// use failure::Error;
-/// use futures::future::{Future, IntoFuture};
+/// use futures::future::Future;
 /// use log::info;
 /// use serde_derive::{Deserialize, Serialize};
 ///
@@ -55,11 +36,15 @@ use crate::{Backoff, Job, JobError, MaxRetries, NewJobInfo};
 ///     count: i32,
 /// }
 ///
-/// impl Job<()> for MyJob {
-///     fn run(self, _state: ()) -> Box<dyn Future<Item = (), Error = Error> + Send> {
+/// impl Job for MyJob {
+///     type Processor = MyProcessor;
+///     type State = ();
+///     type Future = Result<(), Error>;
+///
+///     fn run(self, _state: Self::State) -> Self::Future {
 ///         info!("Processing {}", self.count);
 ///
-///         Box::new(Ok(()).into_future())
+///         Ok(())
 ///     }
 /// }
 ///
@@ -82,6 +67,7 @@ use crate::{Backoff, Job, JobError, MaxRetries, NewJobInfo};
 /// }
 /// ```
 pub trait Processor: Clone {
+    /// The job this processor will process
     type Job: Job + 'static;
 
     /// The name of the processor
@@ -177,7 +163,7 @@ pub trait Processor: Clone {
         let res = serde_json::from_value::<Self::Job>(args);
 
         let fut = match res {
-            Ok(job) => Either::A(job.run(state).map_err(JobError::Processing)),
+            Ok(job) => Either::A(job.run(state).into_future().map_err(JobError::Processing)),
             Err(_) => Either::B(Err(JobError::Json).into_future()),
         };
 

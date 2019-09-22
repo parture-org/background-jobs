@@ -1,22 +1,3 @@
-/*
- * This file is part of Background Jobs.
- *
- * Copyright © 2019 Riley Trautman
- *
- * Background Jobs is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Background Jobs is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
- */
-
 use chrono::offset::Utc;
 use failure::Fail;
 use log::error;
@@ -72,6 +53,7 @@ pub trait Storage: Clone + Send {
     where
         F: Fn(Stats) -> Stats;
 
+    /// Generate a new job based on the provided NewJobInfo
     fn new_job(&mut self, job: NewJobInfo) -> Result<u64, Self::Error> {
         let id = self.generate_id()?;
 
@@ -85,6 +67,7 @@ pub trait Storage: Clone + Send {
         Ok(id)
     }
 
+    /// Fetch a job that is ready to be executed, marking it as running
     fn request_job(&mut self, queue: &str, runner_id: u64) -> Result<Option<JobInfo>, Self::Error> {
         match self.fetch_job_from_queue(queue)? {
             Some(mut job) => {
@@ -107,6 +90,7 @@ pub trait Storage: Clone + Send {
         }
     }
 
+    /// "Return" a job to the database, marking it for retry if needed
     fn return_job(
         &mut self,
         ReturnJobInfo { id, result }: ReturnJobInfo,
@@ -140,6 +124,7 @@ pub trait Storage: Clone + Send {
     }
 }
 
+/// A default, in-memory implementation of a storage mechanism
 pub mod memory_storage {
     use super::{JobInfo, Stats};
     use failure::Fail;
@@ -150,6 +135,7 @@ pub mod memory_storage {
     };
 
     #[derive(Clone)]
+    /// An In-Memory store for jobs
     pub struct Storage {
         inner: Arc<Mutex<Inner>>,
     }
@@ -165,6 +151,7 @@ pub mod memory_storage {
     }
 
     impl Storage {
+        /// Create a new, empty job store
         pub fn new() -> Self {
             Storage {
                 inner: Arc::new(Mutex::new(Inner {
@@ -266,6 +253,7 @@ pub mod memory_storage {
     }
 
     #[derive(Clone, Debug, Fail)]
+    /// An error that is impossible to create
     pub enum Never {}
 
     impl fmt::Display for Never {
@@ -273,8 +261,4 @@ pub mod memory_storage {
             match *self {}
         }
     }
-
-    #[derive(Clone, Debug, Fail)]
-    #[fail(display = "Created too many storages, can't generate any more IDs")]
-    pub struct TooManyStoragesError;
 }

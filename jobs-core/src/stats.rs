@@ -1,34 +1,24 @@
-/*
- * This file is part of Background Jobs.
- *
- * Copyright © 2019 Riley Trautman
- *
- * Background Jobs is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Background Jobs is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
- */
-
 use chrono::{offset::Utc, DateTime, Datelike, Timelike};
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Statistics about the jobs processor
 pub struct Stats {
+    /// How many jobs are pending execution
     pub pending: usize,
+
+    /// How many jobs are currently executing
     pub running: usize,
+
+    /// How many jobs are permanently failed
     pub dead: JobStat,
+
+    /// How many jobs have completed successfully
     pub complete: JobStat,
 }
 
 impl Stats {
+    /// A new, empty stats struct
     pub fn new() -> Self {
         Self::default()
     }
@@ -83,6 +73,7 @@ impl Default for Stats {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// A time-based overview of job completion and failures
 pub struct JobStat {
     this_hour: usize,
     today: usize,
@@ -92,6 +83,7 @@ pub struct JobStat {
 }
 
 impl JobStat {
+    /// A new, empty job statistic
     pub fn new() -> Self {
         Self::default()
     }
@@ -133,18 +125,22 @@ impl JobStat {
         self.this_month = 0;
     }
 
+    /// A count from the last hour
     pub fn this_hour(&self) -> usize {
         self.this_hour
     }
 
+    /// A count from the last day
     pub fn today(&self) -> usize {
         self.today
     }
 
+    /// A count from the last month
     pub fn this_month(&self) -> usize {
         self.this_month
     }
 
+    /// A total count
     pub fn all_time(&self) -> usize {
         self.all_time
     }

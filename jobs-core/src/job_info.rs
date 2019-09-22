@@ -1,22 +1,3 @@
-/*
- * This file is part of Background Jobs.
- *
- * Copyright © 2019 Riley Trautman
- *
- * Background Jobs is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Background Jobs is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
- */
-
 use chrono::{offset::Utc, DateTime, Duration as OldDuration};
 use log::trace;
 use serde_derive::{Deserialize, Serialize};
@@ -25,6 +6,7 @@ use serde_json::Value;
 use crate::{Backoff, JobResult, JobStatus, MaxRetries, ShouldStop};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+/// Information about the sate of an attempted job
 pub struct ReturnJobInfo {
     pub(crate) id: u64,
     pub(crate) result: JobResult,
@@ -54,6 +36,7 @@ impl ReturnJobInfo {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+/// Information about a newly created job
 pub struct NewJobInfo {
     /// Name of the processor that should handle this job
     processor: String,
@@ -96,10 +79,12 @@ impl NewJobInfo {
         }
     }
 
+    /// The name of the queue this job will run in
     pub fn queue(&self) -> &str {
         &self.queue
     }
 
+    /// Whether this job is ready to be run immediately
     pub fn is_ready(&self) -> bool {
         self.next_queue.is_none()
     }
@@ -160,6 +145,7 @@ pub struct JobInfo {
 }
 
 impl JobInfo {
+    /// The name of the queue this job will run in
     pub fn queue(&self) -> &str {
         &self.queue
     }
@@ -176,6 +162,7 @@ impl JobInfo {
         self.args.clone()
     }
 
+    /// The ID of this job
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -207,6 +194,7 @@ impl JobInfo {
         );
     }
 
+    /// Whether this job is ready to be run
     pub fn is_ready(&self, now: DateTime<Utc>) -> bool {
         match self.next_queue {
             Some(ref time) => now > *time,
@@ -225,6 +213,7 @@ impl JobInfo {
         should_retry
     }
 
+    /// Whether this job is pending execution
     pub fn is_pending(&self) -> bool {
         self.status == JobStatus::Pending
     }

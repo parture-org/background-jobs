@@ -1,6 +1,6 @@
 [package]
 name = "background-jobs-core"
-description = "Core types for implementing an asynchronous jobs processor on tokio"
+description = "Core types for implementing an asynchronous jobs processor"
 version = "0.6.0"
 license-file = "../LICENSE"
 authors = ["asonix <asonix@asonix.dog>"]

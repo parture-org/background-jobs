@@ -1,21 +1,10 @@
-/*
- * This file is part of Background Jobs.
- *
- * Copyright © 2019 Riley Trautman
- *
- * Background Jobs is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Background Jobs is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
- */
+#![deny(missing_docs)]
+
+//! # Background Jobs Core
+//! _basic types and traits for implementing a background jobs processor_
+//!
+//! This crate shouldn't be depended on directly, except in the case of implementing a custom jobs
+//! processor. For a default solution based on Actix and Sled, look at the `background-jobs` crate.
 
 use failure::{Error, Fail};
 use serde_derive::{Deserialize, Serialize};
@@ -53,33 +42,45 @@ pub enum JobError {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+/// Indicate the state of a job after an attempted run
 pub enum JobResult {
+    /// The job succeeded
     Success,
+
+    /// The job failed
     Failure,
+
+    /// There was no processor to run the job
     MissingProcessor,
 }
 
 impl JobResult {
+    /// Indicate a successful job
     pub fn success() -> Self {
         JobResult::Success
     }
 
+    /// Indicate a failed job
     pub fn failure() -> Self {
         JobResult::Failure
     }
 
+    /// Indicate that the job's processor is not present
     pub fn missing_processor() -> Self {
         JobResult::MissingProcessor
     }
 
+    /// Check if the job failed
     pub fn is_failure(&self) -> bool {
         *self == JobResult::Failure
     }
 
+    /// Check if the job succeeded
     pub fn is_success(&self) -> bool {
         *self == JobResult::Success
     }
 
+    /// Check if the job is missing it's processor
     pub fn is_missing_processor(&self) -> bool {
         *self == JobResult::MissingProcessor
     }
@@ -96,33 +97,46 @@ pub enum JobStatus {
 }
 
 impl JobStatus {
+    /// The job should be queued
     pub fn pending() -> Self {
         JobStatus::Pending
     }
 
+    /// The job is running
     pub fn running() -> Self {
         JobStatus::Running
     }
 
+    /// Check if the job is ready to be queued
     pub fn is_pending(&self) -> bool {
         *self == JobStatus::Pending
     }
 
+    /// Check if the job is running
     pub fn is_running(&self) -> bool {
         *self == JobStatus::Running
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+/// Different styles for retrying jobs
 pub enum Backoff {
     /// Seconds between execution
+    ///
+    /// For example, `Backoff::Linear(5)` will retry a failed job 5 seconds after the previous
+    /// attempt
     Linear(usize),
 
     /// Base for seconds between execution
+    ///
+    /// For example, `Backoff::Exponential(2)` will retry a failed job 2 seconds after the first
+    /// failure, 4 seconds after the second failure, 8 seconds after the third failure, and 16
+    /// seconds after the fourth failure
     Exponential(usize),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+/// How many times a job should be retried before giving up
 pub enum MaxRetries {
     /// Keep retrying forever
     Infinite,

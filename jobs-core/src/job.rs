@@ -1,24 +1,5 @@
-/*
- * This file is part of Background Jobs.
- *
- * Copyright © 2019 Riley Trautman
- *
- * Background Jobs is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Background Jobs is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Background Jobs.  If not, see <http://www.gnu.org/licenses/>.
- */
-
 use failure::Error;
-use futures::Future;
+use futures::{future::IntoFuture, Future};
 use serde::{de::DeserializeOwned, ser::Serialize};
 
 use crate::{Backoff, MaxRetries, Processor};
@@ -31,6 +12,9 @@ pub trait Job: Serialize + DeserializeOwned + 'static {
 
     /// The application state provided to this job at runtime.
     type State: Clone + 'static;
+
+    /// The result of running this operation
+    type Future: IntoFuture<Item = (), Error = Error>;
 
     /// Users of this library must define what it means to run a job.
     ///
