@@ -58,6 +58,7 @@ where
     where
         P: Processor<Job = J> + Sync + Send + 'static,
         J: Job<State = S>,
+        <J::Future as IntoFuture>::Future: Send,
     {
         self.inner.insert(
             P::NAME.to_owned(),

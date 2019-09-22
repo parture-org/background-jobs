@@ -23,6 +23,7 @@ impl<J> Every<J>
 where
     J: Job + Clone + 'static,
 {
+    /// Create a new Every actor
     pub fn new(spawner: QueueHandle, duration: Duration, job: J) -> Self {
         Every {
             spawner,

@@ -8,6 +8,10 @@ use serde_derive::Deserialize;
 
 use crate::{ActixStorage, Worker};
 
+/// The server Actor
+///
+/// This server guards access to Thee storage, and keeps a list of workers that are waiting for
+/// jobs to process
 pub struct Server {
     storage: Box<dyn ActixStorage + Send>,
     cache: HashMap<String, VecDeque<Box<dyn Worker + Send>>>,

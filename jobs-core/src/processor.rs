@@ -159,7 +159,10 @@ pub trait Processor: Clone {
         &self,
         args: Value,
         state: <Self::Job as Job>::State,
-    ) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = JobError> + Send>
+    where
+        <<Self::Job as Job>::Future as IntoFuture>::Future: Send,
+    {
         let res = serde_json::from_value::<Self::Job>(args);
 
         let fut = match res {

@@ -44,6 +44,7 @@ where
     }
 }
 
+/// A worker that runs on the same system as the jobs server
 pub struct LocalWorker<S, State>
 where
     S: Actor + Handler<ReturningJob> + Handler<RequestJob>,
@@ -62,6 +63,7 @@ where
     S::Context: ToEnvelope<S, ReturningJob> + ToEnvelope<S, RequestJob>,
     State: Clone + 'static,
 {
+    /// Create a new local worker
     pub fn new(id: u64, queue: String, processors: ProcessorMap<State>, server: Addr<S>) -> Self {
         LocalWorker {
             id,

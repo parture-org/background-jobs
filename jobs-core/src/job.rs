@@ -1,5 +1,5 @@
 use failure::Error;
-use futures::{future::IntoFuture, Future};
+use futures::future::IntoFuture;
 use serde::{de::DeserializeOwned, ser::Serialize};
 
 use crate::{Backoff, MaxRetries, Processor};
@@ -25,7 +25,7 @@ pub trait Job: Serialize + DeserializeOwned + 'static {
     /// The state passed into this job is initialized at the start of the application. The state
     /// argument could be useful for containing a hook into something like r2d2, or the address of
     /// an actor in an actix-based system.
-    fn run(self, state: Self::State) -> Box<dyn Future<Item = (), Error = Error> + Send>;
+    fn run(self, state: Self::State) -> Self::Future;
 
     /// If this job should not use the default queue for its processor, this can be overridden in
     /// user-code.
