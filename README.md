@@ -19,7 +19,7 @@ failure = "0.1"
 futures = "0.1"
 serde = "1.0"
 serde_drive = "1.0"
-sled-extensions = "0.1"
+sled = "0.1"
 ```
 
 #### To get started with Background Jobs, first you should define a job.
@@ -49,11 +49,12 @@ impl MyJob {
 impl Job for MyJob {
     type Processor = MyProcessor; // We will define this later
     type State = ();
+    type Future = Result<(), Error>;
 
-    fn run(self, _: ()) -> Box<dyn Future<Item = (), Error = Error> + Send> {
+    fn run(self, _: Self::State) -> Self::Future {
         info!("args: {:?}", self);
 
-        Box::new(Ok(()).into_future())
+        Ok(())
     }
 }
 ```
@@ -82,11 +83,12 @@ impl MyState {
 impl Job for MyJob {
     type Processor = MyProcessor; // We will define this later
     type State = MyState;
+    type Future = Result<(), Error>;
 
-    fn run(self, state: MyState) -> Box<dyn Future<Item = (), Error = Error> + Send> {
+    fn run(self, state: Self::State) -> Self::Future {
         info!("{}: args, {:?}", state.app_name, self);
 
-        Box::new(Ok(()).into_future())
+        Ok(())
     }
 }
 ```
@@ -162,9 +164,9 @@ fn main() -> Result<(), Error> {
 
     /*
     // Optionally, a storage backend using the Sled database is provided
-    use sled::Db;
+    use sled::{ConfigBuilder, Db};
     use background_jobs::sled_storage::Storage;
-    let db = Db::open("my-sled-db")?;
+    let db = Db::start(ConfigBuilder::default().temporary(true).build())?;
     let storage = Storage::new(db)?;
     */
 
