@@ -14,12 +14,12 @@ might not be the best experience.
 ```toml
 [dependencies]
 actix = "0.8"
-background-jobs = "0.6.0"
+background-jobs = "0.7.0"
 failure = "0.1"
 futures = "0.1"
 serde = "1.0"
 serde_drive = "1.0"
-sled = "0.28"
+sled = "0.29"
 ```
 
 #### To get started with Background Jobs, first you should define a job.
