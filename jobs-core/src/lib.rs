@@ -20,7 +20,7 @@ pub use crate::{
     job::Job,
     job_info::{JobInfo, NewJobInfo, ReturnJobInfo},
     processor::Processor,
-    processor_map::ProcessorMap,
+    processor_map::{CachedProcessorMap, ProcessorMap},
     stats::{JobStat, Stats},
     storage::{memory_storage, Storage},
 };

@@ -3,7 +3,7 @@ use actix::{
     fut::{wrap_future, ActorFuture},
     Actor, Addr, AsyncContext, Context, Handler, Message,
 };
-use background_jobs_core::{JobInfo, ProcessorMap};
+use background_jobs_core::{JobInfo, CachedProcessorMap};
 use log::info;
 
 use crate::{RequestJob, ReturningJob};
@@ -53,7 +53,7 @@ where
 {
     id: u64,
     queue: String,
-    processors: ProcessorMap<State>,
+    processors: CachedProcessorMap<State>,
     server: Addr<S>,
 }
 
@@ -64,7 +64,7 @@ where
     State: Clone + 'static,
 {
     /// Create a new local worker
-    pub fn new(id: u64, queue: String, processors: ProcessorMap<State>, server: Addr<S>) -> Self {
+    pub fn new(id: u64, queue: String, processors: CachedProcessorMap<State>, server: Addr<S>) -> Self {
         LocalWorker {
             id,
             queue,

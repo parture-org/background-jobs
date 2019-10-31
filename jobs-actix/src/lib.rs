@@ -267,7 +267,7 @@ where
                 LocalWorker::new(
                     acc + i + 1000,
                     key.clone(),
-                    processors.clone(),
+                    processors.cached(),
                     queue_handle.inner.clone(),
                 )
                 .start();
@@ -289,7 +289,7 @@ where
                     LocalWorker::new(
                         acc + i + 1000,
                         key.clone(),
-                        processors.clone(),
+                        processors.cached(),
                         queue_handle.inner.clone(),
                     )
                 });
