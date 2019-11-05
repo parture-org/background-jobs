@@ -8,7 +8,7 @@ use crate::{JobInfo, NewJobInfo, ReturnJobInfo, Stats};
 ///
 /// This crate provides a default implementation in the `memory_storage` module, which is backed by
 /// HashMaps and uses counting to assign IDs. If jobs must be persistent across application
-/// restarts, look into the `[sled-backed](https://github.com/spacejam/sled)` implementation from
+/// restarts, look into the [`sled-backed`](https://github.com/spacejam/sled) implementation from
 /// the `background-jobs-sled-storage` crate.
 pub trait Storage: Clone + Send {
     /// The error type used by the storage mechansim.

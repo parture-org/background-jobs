@@ -152,9 +152,7 @@ pub trait Processor: Clone {
     ///
     /// Patterns like this could be useful if you want to use the same job type for multiple
     /// scenarios. Defining the `process` method for multiple `Processor`s with different
-    /// before/after logic for the same
-    /// [`Job`](https://docs.rs/background-jobs/0.4.0/background_jobs/trait.Job.html) type is
-    /// supported.
+    /// before/after logic for the same [`Job`] supported.
     fn process(
         &self,
         args: Value,
