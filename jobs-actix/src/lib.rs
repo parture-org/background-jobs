@@ -13,8 +13,8 @@
 //! ### Example
 //! ```rust,ignore
 //! use actix::System;
-//! use background_jobs::{Backoff, Job, MaxRetries, Processor, ServerConfig, WorkerConfig};
-//! use failure::Error;
+//! use background_jobs::{create_server, Backoff, Job, MaxRetries, Processor, WorkerConfig};
+//! use anyhow::Error;
 //! use serde_derive::{Deserialize, Serialize};
 //!
 //! const DEFAULT_QUEUE: &'static str = "default";
@@ -41,7 +41,7 @@
 //!     let storage = Storage::new();
 //!
 //!     // Start the application server. This guards access to to the jobs store
-//!     let queue_handle = ServerConfig::new(storage).thread_count(8).start();
+//!     let queue_handle = create_server(storage);
 //!
 //!     // Configure and start our workers
 //!     WorkerConfig::new(move || MyState::new("My App"))
@@ -107,13 +107,21 @@
 //!
 //!     // The number of times background-jobs should try to retry a job before giving up
 //!     //
+//!     // This value defaults to MaxRetries::Count(5)
 //!     // Jobs can optionally override this value
 //!     const MAX_RETRIES: MaxRetries = MaxRetries::Count(1);
 //!
 //!     // The logic to determine how often to retry this job if it fails
 //!     //
+//!     // This value defaults to Backoff::Exponential(2)
 //!     // Jobs can optionally override this value
 //!     const BACKOFF_STRATEGY: Backoff = Backoff::Exponential(2);
+//!
+//!     // When should the job be considered dead
+//!     //
+//!     // The timeout defines when a job is allowed to be considered dead, and so can be retried
+//!     // by the job processor. The value is in milliseconds and defaults to 15,000
+//!     const TIMEOUT: i64 = 15_000
 //! }
 //! ```
 
