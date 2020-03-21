@@ -1,11 +1,9 @@
+use crate::{Backoff, JobResult, JobStatus, MaxRetries, ShouldStop};
 use chrono::{offset::Utc, DateTime, Duration as OldDuration};
 use log::trace;
-use serde_derive::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{Backoff, JobResult, JobStatus, MaxRetries, ShouldStop};
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 /// Information about the sate of an attempted job
 pub struct ReturnJobInfo {
     pub(crate) id: u64,
@@ -35,7 +33,7 @@ impl ReturnJobInfo {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 /// Information about a newly created job
 pub struct NewJobInfo {
     /// Name of the processor that should handle this job
@@ -105,7 +103,7 @@ impl NewJobInfo {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 /// Metadata pertaining to a job that exists within the background_jobs system
 ///
 /// Although exposed publically, this type should only really be handled by the library itself, and
@@ -165,6 +163,14 @@ impl JobInfo {
     /// The ID of this job
     pub fn id(&self) -> u64 {
         self.id
+    }
+
+    /// Convert a JobInfo into a ReturnJobInfo without executing it
+    pub fn unexecuted(self) -> ReturnJobInfo {
+        ReturnJobInfo {
+            id: self.id,
+            result: JobResult::Unexecuted,
+        }
     }
 
     pub(crate) fn increment(&mut self) -> ShouldStop {

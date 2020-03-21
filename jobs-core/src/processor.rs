@@ -1,12 +1,8 @@
-use chrono::{offset::Utc, DateTime};
-use failure::{Error, Fail};
-use futures::{
-    future::{Either, IntoFuture},
-    Future,
-};
-use serde_json::Value;
-
 use crate::{Backoff, Job, JobError, MaxRetries, NewJobInfo};
+use anyhow::Error;
+use chrono::{offset::Utc, DateTime};
+use serde_json::Value;
+use std::{future::Future, pin::Pin};
 
 /// ## The Processor trait
 ///
@@ -25,11 +21,12 @@ use crate::{Backoff, Job, JobError, MaxRetries, NewJobInfo};
 /// ### Example
 ///
 /// ```rust
+/// use anyhow::Error;
 /// use background_jobs_core::{Backoff, Job, MaxRetries, Processor};
-/// use failure::Error;
-/// use futures::future::Future;
+/// use futures::future::{ok, Ready};
 /// use log::info;
 /// use serde_derive::{Deserialize, Serialize};
+/// use std::future::Future;
 ///
 /// #[derive(Deserialize, Serialize)]
 /// struct MyJob {
@@ -39,12 +36,12 @@ use crate::{Backoff, Job, JobError, MaxRetries, NewJobInfo};
 /// impl Job for MyJob {
 ///     type Processor = MyProcessor;
 ///     type State = ();
-///     type Future = Result<(), Error>;
+///     type Future = Ready<Result<(), Error>>;
 ///
 ///     fn run(self, _state: Self::State) -> Self::Future {
 ///         info!("Processing {}", self.count);
 ///
-///         Ok(())
+///         ok(())
 ///     }
 /// }
 ///
@@ -133,20 +130,18 @@ pub trait Processor: Clone {
     ///     &self,
     ///     args: Value,
     ///     state: S
-    /// ) -> Box<dyn Future<Item = (), Error = JobError> + Send> {
+    /// ) -> Pin<Box<dyn Future<Output = Result<(), JobError>> + Send>> {
     ///     let res = serde_json::from_value::<Self::Job>(args);
     ///
-    ///     let fut = match res {
-    ///         Ok(job) => {
-    ///             // Perform some custom pre-job logic
-    ///             Either::A(job.run(state).map_err(JobError::Processing))
-    ///         },
-    ///         Err(_) => Either::B(Err(JobError::Json).into_future()),
-    ///     };
+    ///     Box::pin(async move {
+    ///         let job = res.map_err(|_| JobError::Json)?;
+    ///         // Perform some custom pre-job locic
     ///
-    ///     Box::new(fut.and_then(|_| {
+    ///         job.run(state).await.map_err(JobError::Processing)?;
+    ///
     ///         // Perform some custom post-job logic
-    ///     }))
+    ///         Ok(())
+    ///     })
     /// }
     /// ```
     ///
@@ -157,21 +152,19 @@ pub trait Processor: Clone {
         &self,
         args: Value,
         state: <Self::Job as Job>::State,
-    ) -> Box<dyn Future<Item = (), Error = JobError> + Send>
-    where
-        <<Self::Job as Job>::Future as IntoFuture>::Future: Send,
-    {
-        let res = serde_json::from_value::<Self::Job>(args);
+    ) -> Pin<Box<dyn Future<Output = Result<(), JobError>> + Send>> {
+        // Call run on the job here because State isn't Send, but the future produced by job IS
+        // Send
+        let res = serde_json::from_value::<Self::Job>(args).map(move |job| job.run(state));
 
-        let fut = match res {
-            Ok(job) => Either::A(job.run(state).into_future().map_err(JobError::Processing)),
-            Err(_) => Either::B(Err(JobError::Json).into_future()),
-        };
+        Box::pin(async move {
+            res?.await?;
 
-        Box::new(fut)
+            Ok(())
+        })
     }
 }
 
-#[derive(Clone, Debug, Fail)]
-#[fail(display = "Failed to to turn job into value")]
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("Failed to to turn job into value")]
 pub struct ToJson;

@@ -6,8 +6,7 @@
 //! This crate shouldn't be depended on directly, except in the case of implementing a custom jobs
 //! processor. For a default solution based on Actix and Sled, look at the `background-jobs` crate.
 
-use failure::{Error, Fail};
-use serde_derive::{Deserialize, Serialize};
+use anyhow::Error;
 
 mod job;
 mod job_info;
@@ -25,23 +24,23 @@ pub use crate::{
     storage::{memory_storage, Storage},
 };
 
-#[derive(Debug, Fail)]
+#[derive(Debug, thiserror::Error)]
 /// The error type returned by a `Processor`'s `process` method
 pub enum JobError {
     /// Some error occurred while processing the job
-    #[fail(display = "Error performing job: {}", _0)]
-    Processing(#[cause] Error),
+    #[error("Error performing job: {0}")]
+    Processing(#[from] Error),
 
     /// Creating a `Job` type from the provided `serde_json::Value` failed
-    #[fail(display = "Could not make JSON value from arguments")]
+    #[error("Could not make JSON value from arguments")]
     Json,
 
     /// No processor was present to handle a given job
-    #[fail(display = "No processor available for job")]
+    #[error("No processor available for job")]
     MissingProcessor,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 /// Indicate the state of a job after an attempted run
 pub enum JobResult {
     /// The job succeeded
@@ -52,6 +51,9 @@ pub enum JobResult {
 
     /// There was no processor to run the job
     MissingProcessor,
+
+    /// The worker requesting this job closed
+    Unexecuted,
 }
 
 impl JobResult {
@@ -86,7 +88,7 @@ impl JobResult {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 /// Set the status of a job when storing it
 pub enum JobStatus {
     /// Job should be queued
@@ -118,7 +120,7 @@ impl JobStatus {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 /// Different styles for retrying jobs
 pub enum Backoff {
     /// Seconds between execution
@@ -135,7 +137,7 @@ pub enum Backoff {
     Exponential(usize),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 /// How many times a job should be retried before giving up
 pub enum MaxRetries {
     /// Keep retrying forever
@@ -174,5 +176,11 @@ impl ShouldStop {
     /// A boolean representation of this state
     pub fn should_requeue(&self) -> bool {
         *self == ShouldStop::Requeue
+    }
+}
+
+impl From<serde_json::error::Error> for JobError {
+    fn from(_: serde_json::error::Error) -> Self {
+        JobError::Json
     }
 }

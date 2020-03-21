@@ -1,7 +1,5 @@
-use actix::System;
-use background_jobs::{Backoff, Job, MaxRetries, Processor, ServerConfig, WorkerConfig};
-use failure::Error;
-use serde_derive::{Deserialize, Serialize};
+use anyhow::Error;
+use background_jobs::{create_server, Backoff, Job, MaxRetries, Processor, WorkerConfig};
 
 const DEFAULT_QUEUE: &'static str = "default";
 
@@ -10,7 +8,7 @@ pub struct MyState {
     pub app_name: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct MyJob {
     some_usize: usize,
     other_usize: usize,
@@ -19,10 +17,9 @@ pub struct MyJob {
 #[derive(Clone, Debug)]
 pub struct MyProcessor;
 
-fn main() -> Result<(), Error> {
-    // First set up the Actix System to ensure we have a runtime to spawn jobs on.
-    let sys = System::new("my-actix-system");
-
+#[actix_rt::main]
+async fn main() -> Result<(), Error> {
+    env_logger::init();
     // Set up our Storage
     // For this example, we use the default in-memory storage mechanism
     use background_jobs::memory_storage::Storage;
@@ -37,7 +34,7 @@ fn main() -> Result<(), Error> {
     */
 
     // Start the application server. This guards access to to the jobs store
-    let queue_handle = ServerConfig::new(storage).thread_count(8).start();
+    let queue_handle = create_server(storage);
 
     // Configure and start our workers
     WorkerConfig::new(move || MyState::new("My App"))
@@ -51,7 +48,7 @@ fn main() -> Result<(), Error> {
     queue_handle.queue(MyJob::new(5, 6))?;
 
     // Block on Actix
-    sys.run()?;
+    actix_rt::signal::ctrl_c().await?;
     Ok(())
 }
 
@@ -72,12 +69,12 @@ impl MyJob {
     }
 }
 
+#[async_trait::async_trait]
 impl Job for MyJob {
     type Processor = MyProcessor;
     type State = MyState;
-    type Future = Result<(), Error>;
 
-    fn run(self, state: MyState) -> Self::Future {
+    async fn run(self, state: MyState) -> Result<(), Error> {
         println!("{}: args, {:?}", state.app_name, self);
 
         Ok(())

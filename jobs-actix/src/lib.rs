@@ -15,7 +15,6 @@
 //! use actix::System;
 //! use background_jobs::{Backoff, Job, MaxRetries, Processor, ServerConfig, WorkerConfig};
 //! use failure::Error;
-//! use futures::{future::ok, Future};
 //! use serde_derive::{Deserialize, Serialize};
 //!
 //! const DEFAULT_QUEUE: &'static str = "default";
@@ -34,10 +33,8 @@
 //! #[derive(Clone, Debug)]
 //! pub struct MyProcessor;
 //!
-//! fn main() -> Result<(), Error> {
-//!     // First set up the Actix System to ensure we have a runtime to spawn jobs on.
-//!     let sys = System::new("my-actix-system");
-//!
+//! #[actix_rt::main]
+//! async fn main() -> Result<(), Error> {
 //!     // Set up our Storage
 //!     // For this example, we use the default in-memory storage mechanism
 //!     use background_jobs::memory_storage::Storage;
@@ -57,8 +54,8 @@
 //!     queue_handle.queue(MyJob::new(3, 4))?;
 //!     queue_handle.queue(MyJob::new(5, 6))?;
 //!
-//!     // Block on Actix
-//!     sys.run()?;
+//!     actix_rt::signal::ctrl_c().await?;
+//!
 //!     Ok(())
 //! }
 //!
@@ -79,12 +76,12 @@
 //!     }
 //! }
 //!
+//! #[async_trait::async_trait]
 //! impl Job for MyJob {
 //!     type Processor = MyProcessor;
 //!     type State = MyState;
-//!     type Future = Result<(), Error>;
 //!
-//!     fn run(self, state: MyState) -> Self::Future {
+//!     async fn run(self, state: MyState) -> Result<(), Error> {
 //!         println!("{}: args, {:?}", state.app_name, self);
 //!
 //!         Ok(())
@@ -120,84 +117,32 @@
 //! }
 //! ```
 
+use actix::Arbiter;
+use anyhow::Error;
+use background_jobs_core::{Job, Processor, ProcessorMap, Stats, Storage};
+use log::error;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
-use actix::{Actor, Addr, Arbiter, SyncArbiter};
-use background_jobs_core::{Job, Processor, ProcessorMap, Stats, Storage};
-use failure::{Error, Fail};
-use futures::{future::IntoFuture, Future};
-
 mod every;
-mod pinger;
 mod server;
 mod storage;
 mod worker;
 
-pub use self::{every::Every, server::Server, worker::LocalWorker};
+use self::{every::every, server::Server, worker::local_worker};
 
-use self::{
-    pinger::Pinger,
-    server::{CheckDb, GetStats, NewJob, RequestJob, ReturningJob},
-    storage::{ActixStorage, StorageWrapper},
-    worker::Worker,
-};
-
-/// The configuration for a jobs server
+/// Create a new Server
 ///
-/// The server guards access to the storage backend, and keeps job information properly
-/// up-to-date when workers request jobs to process
-pub struct ServerConfig<S> {
-    storage: S,
-    threads: usize,
-}
-
-impl<S> ServerConfig<S>
+/// In previous versions of this library, the server itself was run on it's own dedicated threads
+/// and guarded access to jobs via messages. Since we now have futures-aware synchronization
+/// primitives, the Server has become an object that gets shared between client threads.
+///
+/// This method should only be called once.
+pub fn create_server<S>(storage: S) -> QueueHandle
 where
     S: Storage + Sync + 'static,
-    S::Error: Fail,
 {
-    /// Create a new ServerConfig
-    pub fn new(storage: S) -> Self {
-        ServerConfig {
-            storage,
-            threads: num_cpus::get(),
-        }
-    }
-
-    /// Set the number of threads to use for the server.
-    ///
-    /// This is not related to the number of workers or the number of worker threads. This is
-    /// purely how many threads will be used to manage access to the job store.
-    ///
-    /// By default, this is the number of processor cores available to the application. On systems
-    /// with logical cores (such as Intel hyperthreads), this will be the total number of logical
-    /// cores.
-    ///
-    /// In certain cases, it may be beneficial to limit the server process count to 1.
-    ///
-    /// When using actix-web, any configuration performed inside `HttpServer::new` closure will
-    /// happen on each thread started by the web server. In order to reduce the number of running
-    /// threads, one job server can be started per web server thread.
-    ///
-    /// Another case to use a single server is if your job store has not locking guarantee, and you
-    /// want to enforce that no job can be requested more than once. The default storage
-    /// implementation does provide this guarantee, but other implementations may not.
-    pub fn thread_count(mut self, threads: usize) -> Self {
-        self.threads = threads;
-        self
-    }
-
-    /// Spin up the server processes
-    pub fn start(self) -> QueueHandle {
-        let ServerConfig { storage, threads } = self;
-
-        let server = SyncArbiter::start(threads, move || {
-            Server::new(StorageWrapper(storage.clone()))
-        });
-
-        Pinger::new(server.clone(), threads).start();
-
-        QueueHandle { inner: server }
+    QueueHandle {
+        inner: Server::new(storage),
     }
 }
 
@@ -240,7 +185,6 @@ where
     where
         P: Processor<Job = J> + Send + Sync + 'static,
         J: Job<State = State>,
-        <J::Future as IntoFuture>::Future: Send,
     {
         self.queues.insert(P::QUEUE.to_owned(), 4);
         self.processors.register_processor(processor);
@@ -264,13 +208,12 @@ where
 
         self.queues.into_iter().fold(0, |acc, (key, count)| {
             (0..count).for_each(|i| {
-                LocalWorker::new(
+                local_worker(
                     acc + i + 1000,
                     key.clone(),
                     processors.cached(),
                     queue_handle.inner.clone(),
-                )
-                .start();
+                );
             });
 
             acc + count
@@ -285,13 +228,13 @@ where
                 let processors = processors.clone();
                 let queue_handle = queue_handle.clone();
                 let key = key.clone();
-                LocalWorker::start_in_arbiter(arbiter, move |_| {
-                    LocalWorker::new(
+                arbiter.exec_fn(move || {
+                    local_worker(
                         acc + i + 1000,
                         key.clone(),
                         processors.cached(),
                         queue_handle.inner.clone(),
-                    )
+                    );
                 });
             });
 
@@ -306,7 +249,7 @@ where
 /// application to spawn jobs.
 #[derive(Clone)]
 pub struct QueueHandle {
-    inner: Addr<Server>,
+    inner: Server,
 }
 
 impl QueueHandle {
@@ -318,7 +261,13 @@ impl QueueHandle {
     where
         J: Job,
     {
-        self.inner.do_send(NewJob(J::Processor::new_job(job)?));
+        let job = J::Processor::new_job(job)?;
+        let server = self.inner.clone();
+        actix::spawn(async move {
+            if let Err(e) = server.new_job(job).await {
+                error!("Error creating job, {}", e);
+            }
+        });
         Ok(())
     }
 
@@ -330,21 +279,11 @@ impl QueueHandle {
     where
         J: Job + Clone + 'static,
     {
-        Every::new(self.clone(), duration, job).start();
+        every(self.clone(), duration, job);
     }
 
     /// Return an overview of the processor's statistics
-    pub fn get_stats(&self) -> Box<dyn Future<Item = Stats, Error = Error> + Send> {
-        Box::new(self.inner.send(GetStats).then(coerce))
-    }
-}
-
-fn coerce<I, E, F>(res: Result<Result<I, E>, F>) -> Result<I, E>
-where
-    E: From<F>,
-{
-    match res {
-        Ok(inner) => inner,
-        Err(e) => Err(e.into()),
+    pub async fn get_stats(&self) -> Result<Stats, Error> {
+        self.inner.get_stats().await
     }
 }

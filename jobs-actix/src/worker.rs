@@ -1,38 +1,34 @@
-use actix::{
-    dev::ToEnvelope,
-    fut::{wrap_future, ActorFuture},
-    Actor, Addr, AsyncContext, Context, Handler, Message,
-};
-use background_jobs_core::{JobInfo, CachedProcessorMap};
-use log::info;
+use crate::Server;
+use background_jobs_core::{CachedProcessorMap, JobInfo};
+use log::{debug, error, warn};
+use tokio::sync::mpsc::{channel, Sender};
 
-use crate::{RequestJob, ReturningJob};
-
+#[async_trait::async_trait]
 pub trait Worker {
-    fn process_job(&self, job: JobInfo);
+    async fn process_job(&self, job: JobInfo) -> Result<(), JobInfo>;
 
     fn id(&self) -> u64;
 
     fn queue(&self) -> &str;
 }
 
-pub struct LocalWorkerHandle<W>
-where
-    W: Actor + Handler<ProcessJob>,
-    W::Context: ToEnvelope<W, ProcessJob>,
-{
-    addr: Addr<W>,
+#[derive(Clone)]
+pub(crate) struct LocalWorkerHandle {
+    tx: Sender<JobInfo>,
     id: u64,
     queue: String,
 }
 
-impl<W> Worker for LocalWorkerHandle<W>
-where
-    W: Actor + Handler<ProcessJob>,
-    W::Context: ToEnvelope<W, ProcessJob>,
-{
-    fn process_job(&self, job: JobInfo) {
-        self.addr.do_send(ProcessJob(job));
+#[async_trait::async_trait]
+impl Worker for LocalWorkerHandle {
+    async fn process_job(&self, job: JobInfo) -> Result<(), JobInfo> {
+        match self.tx.clone().send(job).await {
+            Err(e) => {
+                error!("Unable to send job");
+                Err(e.0)
+            }
+            _ => Ok(()),
+        }
     }
 
     fn id(&self) -> u64 {
@@ -44,79 +40,39 @@ where
     }
 }
 
-/// A worker that runs on the same system as the jobs server
-pub struct LocalWorker<S, State>
-where
-    S: Actor + Handler<ReturningJob> + Handler<RequestJob>,
-    S::Context: ToEnvelope<S, ReturningJob> + ToEnvelope<S, RequestJob>,
-    State: Clone + 'static,
-{
+pub(crate) fn local_worker<State>(
     id: u64,
     queue: String,
     processors: CachedProcessorMap<State>,
-    server: Addr<S>,
-}
-
-impl<S, State> LocalWorker<S, State>
-where
-    S: Actor + Handler<ReturningJob> + Handler<RequestJob>,
-    S::Context: ToEnvelope<S, ReturningJob> + ToEnvelope<S, RequestJob>,
+    server: Server,
+) where
     State: Clone + 'static,
 {
-    /// Create a new local worker
-    pub fn new(id: u64, queue: String, processors: CachedProcessorMap<State>, server: Addr<S>) -> Self {
-        LocalWorker {
-            id,
-            queue,
-            processors,
-            server,
+    let (tx, mut rx) = channel(16);
+
+    let handle = LocalWorkerHandle {
+        tx: tx.clone(),
+        id,
+        queue: queue.clone(),
+    };
+
+    actix::spawn(async move {
+        debug!("Beginning worker loop for {}", id);
+        if let Err(e) = server.request_job(Box::new(handle.clone())).await {
+            error!("Couldn't request first job, bailing, {}", e);
+            return;
         }
-    }
-}
+        while let Some(job) = rx.recv().await {
+            let return_job = processors.process_job(job).await;
 
-impl<S, State> Actor for LocalWorker<S, State>
-where
-    S: Actor + Handler<ReturningJob> + Handler<RequestJob>,
-    S::Context: ToEnvelope<S, ReturningJob> + ToEnvelope<S, RequestJob>,
-    State: Clone + 'static,
-{
-    type Context = Context<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        self.server.do_send(RequestJob(Box::new(LocalWorkerHandle {
-            id: self.id,
-            queue: self.queue.clone(),
-            addr: ctx.address(),
-        })));
-    }
-}
-
-pub struct ProcessJob(JobInfo);
-
-impl Message for ProcessJob {
-    type Result = ();
-}
-
-impl<S, State> Handler<ProcessJob> for LocalWorker<S, State>
-where
-    S: Actor + Handler<ReturningJob> + Handler<RequestJob>,
-    S::Context: ToEnvelope<S, ReturningJob> + ToEnvelope<S, RequestJob>,
-    State: Clone + 'static,
-{
-    type Result = ();
-
-    fn handle(&mut self, ProcessJob(job): ProcessJob, ctx: &mut Self::Context) -> Self::Result {
-        info!("Worker {} processing job {}", self.id, job.id());
-        let fut =
-            wrap_future::<_, Self>(self.processors.process_job(job)).map(|job, actor, ctx| {
-                actor.server.do_send(ReturningJob(job));
-                actor.server.do_send(RequestJob(Box::new(LocalWorkerHandle {
-                    id: actor.id,
-                    queue: actor.queue.clone(),
-                    addr: ctx.address(),
-                })));
-            });
-
-        ctx.spawn(fut);
-    }
+            if let Err(e) = server.return_job(return_job).await {
+                error!("Error returning job, {}", e);
+            }
+            if let Err(e) = server.request_job(Box::new(handle.clone())).await {
+                error!("Error requesting job, {}", e);
+                break;
+            }
+        }
+        warn!("Worker {} closing", id);
+    });
 }

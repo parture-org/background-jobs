@@ -1,7 +1,6 @@
 use chrono::{offset::Utc, DateTime, Datelike, Timelike};
-use serde_derive::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 /// Statistics about the jobs processor
 pub struct Stats {
     /// How many jobs are pending execution
@@ -72,7 +71,7 @@ impl Default for Stats {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 /// A time-based overview of job completion and failures
 pub struct JobStat {
     this_hour: usize,

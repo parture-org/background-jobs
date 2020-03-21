@@ -11,6 +11,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-background-jobs-core = { version = "0.6", path = "../jobs-core" }
+actix-threadpool = "0.3.1"
+async-trait = "0.1.24"
+background-jobs-core = { version = "0.7", path = "../jobs-core" }
 chrono = "0.4"
 sled-extensions = { version = "0.2", features = ["bincode", "cbor"] }
+thiserror = "1.0"

@@ -1,6 +1,6 @@
 use chrono::offset::Utc;
-use failure::Fail;
 use log::error;
+use std::error::Error;
 
 use crate::{JobInfo, NewJobInfo, ReturnJobInfo, Stats};
 
@@ -10,72 +10,77 @@ use crate::{JobInfo, NewJobInfo, ReturnJobInfo, Stats};
 /// HashMaps and uses counting to assign IDs. If jobs must be persistent across application
 /// restarts, look into the [`sled-backed`](https://github.com/spacejam/sled) implementation from
 /// the `background-jobs-sled-storage` crate.
+#[async_trait::async_trait]
 pub trait Storage: Clone + Send {
     /// The error type used by the storage mechansim.
-    type Error: Fail;
+    type Error: Error + Send + Sync;
 
     /// This method generates unique IDs for jobs
-    fn generate_id(&mut self) -> Result<u64, Self::Error>;
+    async fn generate_id(&self) -> Result<u64, Self::Error>;
 
     /// This method should store the supplied job
     ///
     /// The supplied job _may already be present_. The implementation should overwrite the stored
     /// job with the new job so that future calls to `fetch_job` return the new one.
-    fn save_job(&mut self, job: JobInfo) -> Result<(), Self::Error>;
+    async fn save_job(&self, job: JobInfo) -> Result<(), Self::Error>;
 
     /// This method should return the job with the given ID regardless of what state the job is in.
-    fn fetch_job(&mut self, id: u64) -> Result<Option<JobInfo>, Self::Error>;
+    async fn fetch_job(&self, id: u64) -> Result<Option<JobInfo>, Self::Error>;
 
     /// This should fetch a job ready to be processed from the queue
     ///
     /// If a job is not ready, is currently running, or is not in the requested queue, this method
     /// should not return it. If no jobs meet these criteria, this method should return Ok(None)
-    fn fetch_job_from_queue(&mut self, queue: &str) -> Result<Option<JobInfo>, Self::Error>;
+    async fn fetch_job_from_queue(&self, queue: &str) -> Result<Option<JobInfo>, Self::Error>;
 
     /// This method tells the storage mechanism to mark the given job as being in the provided
     /// queue
-    fn queue_job(&mut self, queue: &str, id: u64) -> Result<(), Self::Error>;
+    async fn queue_job(&self, queue: &str, id: u64) -> Result<(), Self::Error>;
 
     /// This method tells the storage mechanism to mark a given job as running
-    fn run_job(&mut self, id: u64, runner_id: u64) -> Result<(), Self::Error>;
+    async fn run_job(&self, id: u64, runner_id: u64) -> Result<(), Self::Error>;
 
     /// This method tells the storage mechanism to remove the job
     ///
     /// This happens when a job has been completed or has failed too many times
-    fn delete_job(&mut self, id: u64) -> Result<(), Self::Error>;
+    async fn delete_job(&self, id: u64) -> Result<(), Self::Error>;
 
     /// This method returns the current statistics, or Stats::default() if none exists.
-    fn get_stats(&self) -> Result<Stats, Self::Error>;
+    async fn get_stats(&self) -> Result<Stats, Self::Error>;
 
     /// This method fetches the existing statistics or Stats::default(), and stores the result of
     /// calling `update_stats` on it.
-    fn update_stats<F>(&mut self, f: F) -> Result<(), Self::Error>
+    async fn update_stats<F>(&self, f: F) -> Result<(), Self::Error>
     where
-        F: Fn(Stats) -> Stats;
+        F: Fn(Stats) -> Stats + Send + 'static;
 
     /// Generate a new job based on the provided NewJobInfo
-    fn new_job(&mut self, job: NewJobInfo) -> Result<u64, Self::Error> {
-        let id = self.generate_id()?;
+    async fn new_job(&self, job: NewJobInfo) -> Result<u64, Self::Error> {
+        let id = self.generate_id().await?;
 
         let job = job.with_id(id);
 
         let queue = job.queue().to_owned();
-        self.save_job(job)?;
-        self.queue_job(&queue, id)?;
-        self.update_stats(Stats::new_job)?;
+        self.save_job(job).await?;
+        self.queue_job(&queue, id).await?;
+        self.update_stats(Stats::new_job).await?;
 
         Ok(id)
     }
 
     /// Fetch a job that is ready to be executed, marking it as running
-    fn request_job(&mut self, queue: &str, runner_id: u64) -> Result<Option<JobInfo>, Self::Error> {
-        match self.fetch_job_from_queue(queue)? {
+    async fn request_job(
+        &self,
+        queue: &str,
+        runner_id: u64,
+    ) -> Result<Option<JobInfo>, Self::Error> {
+        match self.fetch_job_from_queue(queue).await? {
             Some(mut job) => {
                 if job.is_pending() && job.is_ready(Utc::now()) && job.is_in_queue(queue) {
                     job.run();
-                    self.run_job(job.id(), runner_id)?;
-                    self.save_job(job.clone())?;
-                    self.update_stats(Stats::run_job)?;
+                    self.run_job(job.id(), runner_id).await?;
+                    self.save_job(job.clone()).await?;
+                    self.update_stats(Stats::run_job).await?;
 
                     Ok(Some(job))
                 } else {
@@ -91,35 +96,35 @@ pub trait Storage: Clone + Send {
     }
 
     /// "Return" a job to the database, marking it for retry if needed
-    fn return_job(
-        &mut self,
+    async fn return_job(
+        &self,
         ReturnJobInfo { id, result }: ReturnJobInfo,
     ) -> Result<(), Self::Error> {
         if result.is_failure() {
-            if let Some(mut job) = self.fetch_job(id)? {
+            if let Some(mut job) = self.fetch_job(id).await? {
                 if job.needs_retry() {
-                    self.queue_job(job.queue(), id)?;
-                    self.save_job(job)?;
-                    self.update_stats(Stats::retry_job)
+                    self.queue_job(job.queue(), id).await?;
+                    self.save_job(job).await?;
+                    self.update_stats(Stats::retry_job).await
                 } else {
-                    self.delete_job(id)?;
-                    self.update_stats(Stats::fail_job)
+                    self.delete_job(id).await?;
+                    self.update_stats(Stats::fail_job).await
                 }
             } else {
                 Ok(())
             }
         } else if result.is_missing_processor() {
-            if let Some(mut job) = self.fetch_job(id)? {
+            if let Some(mut job) = self.fetch_job(id).await? {
                 job.pending();
-                self.queue_job(job.queue(), id)?;
-                self.save_job(job)?;
-                self.update_stats(Stats::retry_job)
+                self.queue_job(job.queue(), id).await?;
+                self.save_job(job).await?;
+                self.update_stats(Stats::retry_job).await
             } else {
                 Ok(())
             }
         } else {
-            self.delete_job(id)?;
-            self.update_stats(Stats::complete_job)
+            self.delete_job(id).await?;
+            self.update_stats(Stats::complete_job).await
         }
     }
 }
@@ -127,12 +132,8 @@ pub trait Storage: Clone + Send {
 /// A default, in-memory implementation of a storage mechanism
 pub mod memory_storage {
     use super::{JobInfo, Stats};
-    use failure::Fail;
-    use std::{
-        collections::HashMap,
-        fmt,
-        sync::{Arc, Mutex},
-    };
+    use futures::lock::Mutex;
+    use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
     #[derive(Clone)]
     /// An In-Memory store for jobs
@@ -166,30 +167,31 @@ pub mod memory_storage {
         }
     }
 
+    #[async_trait::async_trait]
     impl super::Storage for Storage {
-        type Error = Never;
+        type Error = Infallible;
 
-        fn generate_id(&mut self) -> Result<u64, Self::Error> {
-            let mut inner = self.inner.lock().unwrap();
+        async fn generate_id(&self) -> Result<u64, Self::Error> {
+            let mut inner = self.inner.lock().await;
             let id = inner.count;
             inner.count = inner.count.wrapping_add(1);
             Ok(id)
         }
 
-        fn save_job(&mut self, job: JobInfo) -> Result<(), Self::Error> {
-            self.inner.lock().unwrap().jobs.insert(job.id(), job);
+        async fn save_job(&self, job: JobInfo) -> Result<(), Self::Error> {
+            self.inner.lock().await.jobs.insert(job.id(), job);
 
             Ok(())
         }
 
-        fn fetch_job(&mut self, id: u64) -> Result<Option<JobInfo>, Self::Error> {
-            let j = self.inner.lock().unwrap().jobs.get(&id).map(|j| j.clone());
+        async fn fetch_job(&self, id: u64) -> Result<Option<JobInfo>, Self::Error> {
+            let j = self.inner.lock().await.jobs.get(&id).map(|j| j.clone());
 
             Ok(j)
         }
 
-        fn fetch_job_from_queue(&mut self, queue: &str) -> Result<Option<JobInfo>, Self::Error> {
-            let mut inner = self.inner.lock().unwrap();
+        async fn fetch_job_from_queue(&self, queue: &str) -> Result<Option<JobInfo>, Self::Error> {
+            let mut inner = self.inner.lock().await;
 
             let j = inner
                 .queues
@@ -210,25 +212,21 @@ pub mod memory_storage {
             Ok(j)
         }
 
-        fn queue_job(&mut self, queue: &str, id: u64) -> Result<(), Self::Error> {
-            self.inner
-                .lock()
-                .unwrap()
-                .queues
-                .insert(id, queue.to_owned());
+        async fn queue_job(&self, queue: &str, id: u64) -> Result<(), Self::Error> {
+            self.inner.lock().await.queues.insert(id, queue.to_owned());
             Ok(())
         }
 
-        fn run_job(&mut self, id: u64, worker_id: u64) -> Result<(), Self::Error> {
-            let mut inner = self.inner.lock().unwrap();
+        async fn run_job(&self, id: u64, worker_id: u64) -> Result<(), Self::Error> {
+            let mut inner = self.inner.lock().await;
 
             inner.worker_ids.insert(id, worker_id);
             inner.worker_ids_inverse.insert(worker_id, id);
             Ok(())
         }
 
-        fn delete_job(&mut self, id: u64) -> Result<(), Self::Error> {
-            let mut inner = self.inner.lock().unwrap();
+        async fn delete_job(&self, id: u64) -> Result<(), Self::Error> {
+            let mut inner = self.inner.lock().await;
             inner.jobs.remove(&id);
             inner.queues.remove(&id);
             if let Some(worker_id) = inner.worker_ids.remove(&id) {
@@ -237,28 +235,18 @@ pub mod memory_storage {
             Ok(())
         }
 
-        fn get_stats(&self) -> Result<Stats, Self::Error> {
-            Ok(self.inner.lock().unwrap().stats.clone())
+        async fn get_stats(&self) -> Result<Stats, Self::Error> {
+            Ok(self.inner.lock().await.stats.clone())
         }
 
-        fn update_stats<F>(&mut self, f: F) -> Result<(), Self::Error>
+        async fn update_stats<F>(&self, f: F) -> Result<(), Self::Error>
         where
-            F: Fn(Stats) -> Stats,
+            F: Fn(Stats) -> Stats + Send,
         {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.inner.lock().await;
 
             inner.stats = (f)(inner.stats.clone());
             Ok(())
-        }
-    }
-
-    #[derive(Clone, Debug, Fail)]
-    /// An error that is impossible to create
-    pub enum Never {}
-
-    impl fmt::Display for Never {
-        fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
-            match *self {}
         }
     }
 }

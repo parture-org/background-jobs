@@ -1,17 +1,15 @@
-use std::{collections::HashMap, sync::Arc};
-
-use futures::future::{Either, Future, IntoFuture};
+use crate::{Job, JobError, JobInfo, Processor, ReturnJobInfo};
 use log::{error, info};
 use serde_json::Value;
-
-use crate::{Job, JobError, JobInfo, Processor, ReturnJobInfo};
+use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
 /// A generic function that processes a job
 ///
 /// Instead of storing [`Processor`] type directly, the [`ProcessorMap`]
 /// struct stores these `ProcessFn` types that don't expose differences in Job types.
-pub type ProcessFn<S> =
-    Arc<dyn Fn(Value, S) -> Box<dyn Future<Item = (), Error = JobError> + Send> + Send + Sync>;
+pub type ProcessFn<S> = Arc<
+    dyn Fn(Value, S) -> Pin<Box<dyn Future<Output = Result<(), JobError>> + Send>> + Send + Sync,
+>;
 
 pub type StateFn<S> = Arc<dyn Fn() -> S + Send + Sync>;
 
@@ -59,7 +57,6 @@ where
     where
         P: Processor<Job = J> + Sync + Send + 'static,
         J: Job<State = S>,
-        <J::Future as IntoFuture>::Future: Send,
     {
         self.inner.insert(
             P::NAME.to_owned(),
@@ -79,17 +76,17 @@ where
     ///
     /// This should not be called from outside implementations of a backgoround-jobs runtime. It is
     /// intended for internal use.
-    pub fn process_job(&self, job: JobInfo) -> impl Future<Item = ReturnJobInfo, Error = ()> {
+    pub async fn process_job(&self, job: JobInfo) -> ReturnJobInfo {
         let opt = self
             .inner
             .get(job.processor())
             .map(|processor| process(processor, (self.state_fn)(), job.clone()));
 
         if let Some(fut) = opt {
-            Either::A(fut)
+            fut.await
         } else {
             error!("Processor {} not present", job.processor());
-            Either::B(Ok(ReturnJobInfo::missing_processor(job.id())).into_future())
+            ReturnJobInfo::missing_processor(job.id())
         }
     }
 }
@@ -102,38 +99,29 @@ where
     ///
     /// This should not be called from outside implementations of a backgoround-jobs runtime. It is
     /// intended for internal use.
-    pub fn process_job(&self, job: JobInfo) -> impl Future<Item = ReturnJobInfo, Error = ()> {
-        let opt = self
-            .inner
-            .get(job.processor())
-            .map(|processor| process(processor, self.state.clone(), job.clone()));
-
-        if let Some(fut) = opt {
-            Either::A(fut)
+    pub async fn process_job(&self, job: JobInfo) -> ReturnJobInfo {
+        if let Some(processor) = self.inner.get(job.processor()) {
+            process(processor, self.state.clone(), job).await
         } else {
             error!("Processor {} not present", job.processor());
-            Either::B(Ok(ReturnJobInfo::missing_processor(job.id())).into_future())
+            ReturnJobInfo::missing_processor(job.id())
         }
     }
 }
 
-fn process<S>(
-    process_fn: &ProcessFn<S>,
-    state: S,
-    job: JobInfo,
-) -> impl Future<Item = ReturnJobInfo, Error = ()> {
+async fn process<S>(process_fn: &ProcessFn<S>, state: S, job: JobInfo) -> ReturnJobInfo {
     let args = job.args();
     let id = job.id();
     let processor = job.processor().to_owned();
 
-    process_fn(args, state).then(move |res| match res {
+    match process_fn(args, state).await {
         Ok(_) => {
             info!("Job {} completed, {}", id, processor);
-            Ok(ReturnJobInfo::pass(id))
+            ReturnJobInfo::pass(id)
         }
         Err(e) => {
             error!("Job {} errored, {}, {}", id, processor, e);
-            Ok(ReturnJobInfo::fail(id))
+            ReturnJobInfo::fail(id)
         }
-    })
+    }
 }

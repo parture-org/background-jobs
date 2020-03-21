@@ -1,39 +1,41 @@
+use anyhow::Error;
 use background_jobs_core::{JobInfo, NewJobInfo, ReturnJobInfo, Stats, Storage};
-use failure::{Error, Fail};
 
+#[async_trait::async_trait]
 pub(crate) trait ActixStorage {
-    fn new_job(&mut self, job: NewJobInfo) -> Result<u64, Error>;
+    async fn new_job(&self, job: NewJobInfo) -> Result<u64, Error>;
 
-    fn request_job(&mut self, queue: &str, runner_id: u64) -> Result<Option<JobInfo>, Error>;
+    async fn request_job(&self, queue: &str, runner_id: u64) -> Result<Option<JobInfo>, Error>;
 
-    fn return_job(&mut self, ret: ReturnJobInfo) -> Result<(), Error>;
+    async fn return_job(&self, ret: ReturnJobInfo) -> Result<(), Error>;
 
-    fn get_stats(&self) -> Result<Stats, Error>;
+    async fn get_stats(&self) -> Result<Stats, Error>;
 }
 
 pub(crate) struct StorageWrapper<S>(pub(crate) S)
 where
-    S: Storage,
-    S::Error: Fail;
+    S: Storage + Send + Sync,
+    S::Error: Send + Sync + 'static;
 
+#[async_trait::async_trait]
 impl<S> ActixStorage for StorageWrapper<S>
 where
-    S: Storage,
-    S::Error: Fail,
+    S: Storage + Send + Sync,
+    S::Error: Send + Sync + 'static,
 {
-    fn new_job(&mut self, job: NewJobInfo) -> Result<u64, Error> {
-        self.0.new_job(job).map_err(Error::from)
+    async fn new_job(&self, job: NewJobInfo) -> Result<u64, Error> {
+        Ok(self.0.new_job(job).await?)
     }
 
-    fn request_job(&mut self, queue: &str, runner_id: u64) -> Result<Option<JobInfo>, Error> {
-        self.0.request_job(queue, runner_id).map_err(Error::from)
+    async fn request_job(&self, queue: &str, runner_id: u64) -> Result<Option<JobInfo>, Error> {
+        Ok(self.0.request_job(queue, runner_id).await?)
     }
 
-    fn return_job(&mut self, ret: ReturnJobInfo) -> Result<(), Error> {
-        self.0.return_job(ret).map_err(Error::from)
+    async fn return_job(&self, ret: ReturnJobInfo) -> Result<(), Error> {
+        Ok(self.0.return_job(ret).await?)
     }
 
-    fn get_stats(&self) -> Result<Stats, Error> {
-        self.0.get_stats().map_err(Error::from)
+    async fn get_stats(&self) -> Result<Stats, Error> {
+        Ok(self.0.get_stats().await?)
     }
 }
