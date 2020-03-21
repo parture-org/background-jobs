@@ -1,5 +1,5 @@
 use chrono::offset::Utc;
-use log::error;
+use log::info;
 use std::error::Error;
 
 use crate::{JobInfo, NewJobInfo, ReturnJobInfo, Stats};
@@ -85,7 +85,7 @@ pub trait Storage: Clone + Send {
 
                     Ok(Some(job))
                 } else {
-                    error!(
+                    info!(
                         "Not fetching job {}, it is not ready for processing",
                         job.id()
                     );
@@ -109,13 +109,14 @@ pub trait Storage: Clone + Send {
                     self.save_job(job).await?;
                     self.update_stats(Stats::retry_job).await
                 } else {
+                    info!("Job {} failed permanently", id);
                     self.delete_job(id).await?;
                     self.update_stats(Stats::fail_job).await
                 }
             } else {
                 Ok(())
             }
-        } else if result.is_missing_processor() {
+        } else if result.is_missing_processor() || result.is_unexecuted() {
             if let Some(mut job) = self.fetch_job(id).await? {
                 job.pending();
                 self.queue_job(job.queue(), id).await?;

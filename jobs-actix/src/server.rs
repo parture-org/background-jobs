@@ -5,7 +5,7 @@ use crate::{
 use actix::clock::{interval_at, Duration, Instant};
 use anyhow::Error;
 use background_jobs_core::{NewJobInfo, ReturnJobInfo, Stats, Storage};
-use log::{debug, error};
+use log::{error, trace};
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
@@ -54,14 +54,14 @@ impl Server {
     }
 
     async fn check_db(&self) -> Result<(), Error> {
-        debug!("Checking db for ready jobs");
+        trace!("Checking db for ready jobs");
         for queue in self.cache.keys().await {
             'worker_loop: while let Some(worker) = self.cache.pop(queue.clone()).await {
                 if !self.try_turning(queue.clone(), worker).await? {
                     break 'worker_loop;
                 }
             }
-            debug!("Finished job lookups for queue {}", queue);
+            trace!("Finished job lookups for queue {}", queue);
         }
 
         Ok(())
@@ -73,7 +73,7 @@ impl Server {
         self.storage.new_job(job).await?;
 
         if !ready {
-            debug!("New job is not ready for processing yet, returning");
+            trace!("New job is not ready for processing yet, returning");
             return Ok(());
         }
 
@@ -88,7 +88,7 @@ impl Server {
         &self,
         worker: Box<dyn Worker + Send + 'static>,
     ) -> Result<(), Error> {
-        debug!("Worker {} requested job", worker.id());
+        trace!("Worker {} requested job", worker.id());
 
         self.try_turning(worker.queue().to_owned(), worker).await?;
 
@@ -100,14 +100,14 @@ impl Server {
         queue: String,
         worker: Box<dyn Worker + Send + 'static>,
     ) -> Result<bool, Error> {
-        debug!("Trying to find job for worker {}", worker.id());
+        trace!("Trying to find job for worker {}", worker.id());
         if let Ok(Some(job)) = self.storage.request_job(&queue, worker.id()).await {
             if let Err(job) = worker.process_job(job).await {
                 error!("Worker has hung up");
                 self.storage.return_job(job.unexecuted()).await?
             }
         } else {
-            debug!("No job exists, returning worker {}", worker.id());
+            trace!("No job exists, returning worker {}", worker.id());
             self.cache.push(queue.clone(), worker).await;
             return Ok(false);
         }

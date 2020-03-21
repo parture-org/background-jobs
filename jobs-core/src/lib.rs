@@ -86,6 +86,11 @@ impl JobResult {
     pub fn is_missing_processor(&self) -> bool {
         *self == JobResult::MissingProcessor
     }
+
+    /// Check if the job was returned without an execution attempt
+    pub fn is_unexecuted(&self) -> bool {
+        *self == JobResult::Unexecuted
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
