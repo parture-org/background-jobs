@@ -44,4 +44,13 @@ pub trait Job: Serialize + DeserializeOwned + 'static {
     fn backoff_strategy(&self) -> Option<Backoff> {
         None
     }
+
+    /// Define the maximum number of milliseconds this job should be allowed to run before being
+    /// considered dead.
+    ///
+    /// This is important for allowing the job server to reap processes that were started but never
+    /// completed.
+    fn timeout(&self) -> Option<i64> {
+        None
+    }
 }

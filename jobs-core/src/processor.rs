@@ -80,13 +80,25 @@ pub trait Processor: Clone {
 
     /// Define the default number of retries for a given processor
     ///
+    /// Defaults to Count(5)
     /// Jobs can override
-    const MAX_RETRIES: MaxRetries;
+    const MAX_RETRIES: MaxRetries = MaxRetries::Count(5);
 
     /// Define the default backoff strategy for a given processor
     ///
+    /// Defaults to Exponential(2)
     /// Jobs can override
-    const BACKOFF_STRATEGY: Backoff;
+    const BACKOFF_STRATEGY: Backoff = Backoff::Exponential(2);
+
+    /// Define the maximum number of milliseconds a job should be allowed to run before being
+    /// considered dead.
+    ///
+    /// This is important for allowing the job server to reap processes that were started but never
+    /// completed.
+    ///
+    /// Defaults to 15 seconds
+    /// Jobs can override
+    const TIMEOUT: i64 = 15_000;
 
     /// A provided method to create a new JobInfo from provided arguments
     ///
@@ -96,6 +108,7 @@ pub trait Processor: Clone {
         let queue = job.queue().unwrap_or(Self::QUEUE).to_owned();
         let max_retries = job.max_retries().unwrap_or(Self::MAX_RETRIES);
         let backoff_strategy = job.backoff_strategy().unwrap_or(Self::BACKOFF_STRATEGY);
+        let timeout = job.timeout().unwrap_or(Self::TIMEOUT);
 
         let job = NewJobInfo::new(
             Self::NAME.to_owned(),
@@ -103,6 +116,7 @@ pub trait Processor: Clone {
             serde_json::to_value(job).map_err(|_| ToJson)?,
             max_retries,
             backoff_strategy,
+            timeout,
         );
 
         Ok(job)

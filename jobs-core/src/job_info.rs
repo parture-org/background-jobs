@@ -1,5 +1,5 @@
 use crate::{Backoff, JobResult, JobStatus, MaxRetries, ShouldStop};
-use chrono::{offset::Utc, DateTime, Duration as OldDuration};
+use chrono::{offset::Utc, DateTime, Duration};
 use log::trace;
 use serde_json::Value;
 
@@ -53,6 +53,11 @@ pub struct NewJobInfo {
 
     /// The time this job should be dequeued
     next_queue: Option<DateTime<Utc>>,
+
+    /// Milliseconds from execution until the job is considered dead
+    ///
+    /// This is important for storage implementations to reap unfinished jobs
+    timeout: i64,
 }
 
 impl NewJobInfo {
@@ -66,6 +71,7 @@ impl NewJobInfo {
         args: Value,
         max_retries: MaxRetries,
         backoff_strategy: Backoff,
+        timeout: i64,
     ) -> Self {
         NewJobInfo {
             processor,
@@ -74,6 +80,7 @@ impl NewJobInfo {
             max_retries,
             next_queue: None,
             backoff_strategy,
+            timeout,
         }
     }
 
@@ -99,6 +106,7 @@ impl NewJobInfo {
             next_queue: self.next_queue,
             backoff_strategy: self.backoff_strategy,
             updated_at: Utc::now(),
+            timeout: self.timeout,
         }
     }
 }
@@ -140,6 +148,11 @@ pub struct JobInfo {
 
     /// The time this job was last updated
     updated_at: DateTime<Utc>,
+
+    /// Milliseconds from execution until the job is considered dead
+    ///
+    /// This is important for storage implementations to reap unfinished jobs
+    timeout: i64,
 }
 
 impl JobInfo {
@@ -183,10 +196,10 @@ impl JobInfo {
         let now = Utc::now();
 
         let next_queue = match self.backoff_strategy {
-            Backoff::Linear(secs) => now + OldDuration::seconds(secs as i64),
+            Backoff::Linear(secs) => now + Duration::seconds(secs as i64),
             Backoff::Exponential(base) => {
                 let secs = base.pow(self.retry_count);
-                now + OldDuration::seconds(secs as i64)
+                now + Duration::seconds(secs as i64)
             }
         };
 
@@ -220,8 +233,10 @@ impl JobInfo {
     }
 
     /// Whether this job is pending execution
-    pub fn is_pending(&self) -> bool {
+    pub fn is_pending(&self, now: DateTime<Utc>) -> bool {
         self.status == JobStatus::Pending
+            || (self.status == JobStatus::Running
+                && (self.updated_at + Duration::milliseconds(self.timeout)) < now)
     }
 
     pub(crate) fn is_in_queue(&self, queue: &str) -> bool {

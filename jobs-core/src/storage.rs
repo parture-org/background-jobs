@@ -76,7 +76,8 @@ pub trait Storage: Clone + Send {
     ) -> Result<Option<JobInfo>, Self::Error> {
         match self.fetch_job_from_queue(queue).await? {
             Some(mut job) => {
-                if job.is_pending() && job.is_ready(Utc::now()) && job.is_in_queue(queue) {
+                let now = Utc::now();
+                if job.is_pending(now) && job.is_ready(now) && job.is_in_queue(queue) {
                     job.run();
                     self.run_job(job.id(), runner_id).await?;
                     self.save_job(job.clone()).await?;

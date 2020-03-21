@@ -98,7 +98,7 @@ impl Storage for SledStorage {
                     )
                     .filter_map(|id| job_tree.get(id).ok())
                     .filter_map(|opt| opt)
-                    .filter(|job| job.is_ready(now))
+                    .filter(|job| job.is_ready(now) && job.is_pending(now))
                     .next();
 
                 if let Some(ref job) = job {
