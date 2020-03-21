@@ -120,7 +120,7 @@ async fn process<S>(process_fn: &ProcessFn<S>, state: S, job: JobInfo) -> Return
             ReturnJobInfo::pass(id)
         }
         Err(e) => {
-            error!("Job {} errored, {}, {}", id, processor, e);
+            info!("Job {} errored, {}, {}", id, processor, e);
             ReturnJobInfo::fail(id)
         }
     }
