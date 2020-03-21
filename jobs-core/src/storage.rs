@@ -89,6 +89,7 @@ pub trait Storage: Clone + Send {
                         "Not fetching job {}, it is not ready for processing",
                         job.id()
                     );
+                    self.queue_job(job.queue(), job.id()).await?;
                     Ok(None)
                 }
             }
