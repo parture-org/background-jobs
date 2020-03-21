@@ -13,9 +13,9 @@
 //! ### Example
 //! ```rust,ignore
 //! use actix::System;
-//! use background_jobs::{create_server, Backoff, Job, MaxRetries, Processor, WorkerConfig};
 //! use anyhow::Error;
-//! use serde_derive::{Deserialize, Serialize};
+//! use background_jobs::{create_server, Backoff, Job, MaxRetries, Processor, WorkerConfig};
+//! use futures::future::{ok, Ready};
 //!
 //! const DEFAULT_QUEUE: &'static str = "default";
 //!
@@ -24,7 +24,7 @@
 //!     pub app_name: String,
 //! }
 //!
-//! #[derive(Clone, Debug, Deserialize, Serialize)]
+//! #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 //! pub struct MyJob {
 //!     some_usize: usize,
 //!     other_usize: usize,
@@ -80,11 +80,12 @@
 //! impl Job for MyJob {
 //!     type Processor = MyProcessor;
 //!     type State = MyState;
+//!     type Future = Ready<Result<(), Error>>;
 //!
-//!     async fn run(self, state: MyState) -> Result<(), Error> {
+//!     async fn run(self, state: MyState) -> Self::Future {
 //!         println!("{}: args, {:?}", state.app_name, self);
 //!
-//!         Ok(())
+//!         ok(())
 //!     }
 //! }
 //!

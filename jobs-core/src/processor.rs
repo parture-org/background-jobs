@@ -23,6 +23,7 @@ use std::{future::Future, pin::Pin};
 /// ```rust
 /// use anyhow::Error;
 /// use background_jobs_core::{Job, Processor};
+/// use futures::future::{ok, Ready};
 /// use log::info;
 ///
 /// #[derive(serde::Deserialize, serde::Serialize)]
@@ -30,15 +31,15 @@ use std::{future::Future, pin::Pin};
 ///     count: i32,
 /// }
 ///
-/// #[async_trait::async_trait]
 /// impl Job for MyJob {
 ///     type Processor = MyProcessor;
 ///     type State = ();
+///     type Future = Ready<Result<(), Error>>;
 ///
-///     async fn run(self, _state: Self::State) -> Result<(), Error> {
+///     fn run(self, _state: Self::State) -> Self::Future {
 ///         info!("Processing {}", self.count);
 ///
-///         Ok(())
+///         ok(())
 ///     }
 /// }
 ///

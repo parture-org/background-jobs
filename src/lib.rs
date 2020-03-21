@@ -30,10 +30,9 @@
 //! [dependencies]
 //! actix = "0.8"
 //! background-jobs = "0.6.0"
-//! failure = "0.1"
+//! anyhow = "1.0"
 //! futures = "0.1"
-//! serde = "1.0"
-//! serde_drive = "1.0"
+//! serde = { version = "1.0", features = ["derive"] }
 //! sled = "0.28"
 //! ```
 //!
@@ -42,11 +41,11 @@
 //! operation. They implment the `Job`, `serde::Serialize`, and `serde::DeserializeOwned`.
 //!
 //! ```rust,ignore
+//! use anyhow::Error;
 //! use background_jobs::Job;
-//! use serde_derive::{Deserialize, Serialize};
-//! use failure::Error;
+//! use futures::future::{ok, Ready};
 //!
-//! #[derive(Clone, Debug, Deserialize, Serialize)]
+//! #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 //! pub struct MyJob {
 //!     some_usize: usize,
 //!     other_usize: usize,
@@ -64,12 +63,12 @@
 //! impl Job for MyJob {
 //!     type Processor = MyProcessor; // We'll define this later
 //!     type State = ();
-//!     type Future = Result<(), Error>;
+//!     type Future = Ready<Result<(), Error>>;
 //!
 //!     fn run(self, _: Self::State) -> Self::Future {
 //!         println!("args: {:?}", self);
 //!
-//!         Ok(())
+//!         ok(())
 //!     }
 //! }
 //! ```
@@ -82,7 +81,8 @@
 //! Let's re-define the job to care about some application state.
 //!
 //! ```rust,ignore
-//! # use failure::Error;
+//! use anyhow::Error;
+//!
 //! #[derive(Clone, Debug)]
 //! pub struct MyState {
 //!     pub app_name: String,
@@ -99,12 +99,12 @@
 //! impl Job for MyJob {
 //!     type Processor = MyProcessor;
 //!     type State = MyState;
-//!     type Future = Result<(), Error>;
+//!     type Future = Ready<Result<(), Error>>;
 //!
 //!     fn run(self, state: Self::State) -> Self::Future {
 //!         info!("{}: args, {:?}", state.app_name, self);
 //!
-//!         Ok(())
+//!         ok(())
 //!     }
 //! }
 //! ```
@@ -164,15 +164,12 @@
 //!
 //! ##### Main
 //! ```rust,ignore
-//! use actix::System;
+//! use anyhow::Error;
 //! use background_jobs::{ServerConfig, sled_storage::Storage, WorkerConfig};
-//! use failure::Error;
 //! use sled::Db;
 //!
-//! fn main() -> Result<(), Error> {
-//!     // First set up the Actix System to ensure we have a runtime to spawn jobs on.
-//!     let sys = System::new("my-actix-system");
-//!
+//! #[actix_rt::main]
+//! async fn main() -> Result<(), Error> {
 //!     // Set up our Storage
 //!     let db = Db::start_default("my-sled-db")?;
 //!     let storage = Storage::new(db)?;
@@ -192,7 +189,7 @@
 //!     queue_handle.queue::<MyProcessor>(MyJob::new(5, 6))?;
 //!
 //!     // Block on Actix
-//!     sys.run()?;
+//!     actix_rt::signal::ctrl_c().await?;
 //!     Ok(())
 //! }
 //! ```

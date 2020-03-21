@@ -1,5 +1,6 @@
 use anyhow::Error;
 use background_jobs::{create_server, Job, MaxRetries, Processor, WorkerConfig};
+use futures::future::{ok, Ready};
 
 const DEFAULT_QUEUE: &'static str = "default";
 
@@ -73,11 +74,12 @@ impl MyJob {
 impl Job for MyJob {
     type Processor = MyProcessor;
     type State = MyState;
+    type Future = Ready<Result<(), Error>>;
 
-    async fn run(self, state: MyState) -> Result<(), Error> {
+    fn run(self, state: MyState) -> Self::Future {
         println!("{}: args, {:?}", state.app_name, self);
 
-        Ok(())
+        ok(())
     }
 }
 
