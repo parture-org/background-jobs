@@ -22,26 +22,23 @@ use std::{future::Future, pin::Pin};
 ///
 /// ```rust
 /// use anyhow::Error;
-/// use background_jobs_core::{Backoff, Job, MaxRetries, Processor};
-/// use futures::future::{ok, Ready};
+/// use background_jobs_core::{Job, Processor};
 /// use log::info;
-/// use serde_derive::{Deserialize, Serialize};
-/// use std::future::Future;
 ///
-/// #[derive(Deserialize, Serialize)]
+/// #[derive(serde::Deserialize, serde::Serialize)]
 /// struct MyJob {
 ///     count: i32,
 /// }
 ///
+/// #[async_trait::async_trait]
 /// impl Job for MyJob {
 ///     type Processor = MyProcessor;
 ///     type State = ();
-///     type Future = Ready<Result<(), Error>>;
 ///
-///     fn run(self, _state: Self::State) -> Self::Future {
+///     async fn run(self, _state: Self::State) -> Result<(), Error> {
 ///         info!("Processing {}", self.count);
 ///
-///         ok(())
+///         Ok(())
 ///     }
 /// }
 ///
@@ -53,8 +50,6 @@ use std::{future::Future, pin::Pin};
 ///
 ///     const NAME: &'static str = "IncrementProcessor";
 ///     const QUEUE: &'static str = "default";
-///     const MAX_RETRIES: MaxRetries = MaxRetries::Count(1);
-///     const BACKOFF_STRATEGY: Backoff = Backoff::Exponential(2);
 /// }
 ///
 /// fn main() -> Result<(), Error> {
