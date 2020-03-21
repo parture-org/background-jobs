@@ -1,5 +1,5 @@
 use anyhow::Error;
-use background_jobs::{create_server, Backoff, Job, MaxRetries, Processor, WorkerConfig};
+use background_jobs::{create_server, Job, MaxRetries, Processor, WorkerConfig};
 
 const DEFAULT_QUEUE: &'static str = "default";
 
@@ -102,9 +102,4 @@ impl Processor for MyProcessor {
     //
     // Jobs can optionally override this value
     const MAX_RETRIES: MaxRetries = MaxRetries::Count(1);
-
-    // The logic to determine how often to retry this job if it fails
-    //
-    // Jobs can optionally override this value
-    const BACKOFF_STRATEGY: Backoff = Backoff::Exponential(2);
 }
