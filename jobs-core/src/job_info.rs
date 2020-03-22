@@ -90,6 +90,10 @@ impl NewJobInfo {
         &self.queue
     }
 
+    pub fn timeout(&self) -> i64 {
+        self.timeout
+    }
+
     /// Whether this job is ready to be run immediately
     pub fn is_ready(&self) -> bool {
         self.next_queue.is_none()
@@ -238,6 +242,16 @@ impl JobInfo {
         self.status == JobStatus::Pending
             || (self.status == JobStatus::Running
                 && (self.updated_at + Duration::milliseconds(self.timeout)) < now)
+    }
+
+    /// Get the status of the job
+    pub fn status(&self) -> JobStatus {
+        self.status.clone()
+    }
+
+    /// The the date of the most recent update
+    pub fn updated_at(&self) -> DateTime<Utc> {
+        self.updated_at
     }
 
     pub(crate) fn is_in_queue(&self, queue: &str) -> bool {

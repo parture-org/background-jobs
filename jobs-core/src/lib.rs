@@ -125,6 +125,31 @@ impl JobStatus {
     }
 }
 
+impl std::fmt::Display for JobStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            JobStatus::Pending => write!(f, "Pending"),
+            JobStatus::Running => write!(f, "Running"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, thiserror::Error)]
+#[error("Invalid job status")]
+pub struct JobStatusError;
+
+impl std::str::FromStr for JobStatus {
+    type Err = JobStatusError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Pending" => Ok(JobStatus::Pending),
+            "Running" => Ok(JobStatus::Running),
+            _ => Err(JobStatusError),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 /// Different styles for retrying jobs
 pub enum Backoff {
