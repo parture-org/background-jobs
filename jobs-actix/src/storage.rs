@@ -1,11 +1,12 @@
 use anyhow::Error;
 use background_jobs_core::{JobInfo, NewJobInfo, ReturnJobInfo, Stats, Storage};
+use uuid::Uuid;
 
 #[async_trait::async_trait]
 pub(crate) trait ActixStorage {
-    async fn new_job(&self, job: NewJobInfo) -> Result<u64, Error>;
+    async fn new_job(&self, job: NewJobInfo) -> Result<Uuid, Error>;
 
-    async fn request_job(&self, queue: &str, runner_id: u64) -> Result<Option<JobInfo>, Error>;
+    async fn request_job(&self, queue: &str, runner_id: Uuid) -> Result<Option<JobInfo>, Error>;
 
     async fn return_job(&self, ret: ReturnJobInfo) -> Result<(), Error>;
 
@@ -23,11 +24,11 @@ where
     S: Storage + Send + Sync,
     S::Error: Send + Sync + 'static,
 {
-    async fn new_job(&self, job: NewJobInfo) -> Result<u64, Error> {
+    async fn new_job(&self, job: NewJobInfo) -> Result<Uuid, Error> {
         Ok(self.0.new_job(job).await?)
     }
 
-    async fn request_job(&self, queue: &str, runner_id: u64) -> Result<Option<JobInfo>, Error> {
+    async fn request_job(&self, queue: &str, runner_id: Uuid) -> Result<Option<JobInfo>, Error> {
         Ok(self.0.request_job(queue, runner_id).await?)
     }
 

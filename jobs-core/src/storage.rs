@@ -1,8 +1,8 @@
+use crate::{JobInfo, NewJobInfo, ReturnJobInfo, Stats};
 use chrono::offset::Utc;
 use log::info;
 use std::error::Error;
-
-use crate::{JobInfo, NewJobInfo, ReturnJobInfo, Stats};
+use uuid::Uuid;
 
 /// Define a storage backend for jobs
 ///
@@ -16,7 +16,7 @@ pub trait Storage: Clone + Send {
     type Error: Error + Send + Sync;
 
     /// This method generates unique IDs for jobs
-    async fn generate_id(&self) -> Result<u64, Self::Error>;
+    async fn generate_id(&self) -> Result<Uuid, Self::Error>;
 
     /// This method should store the supplied job
     ///
@@ -25,7 +25,7 @@ pub trait Storage: Clone + Send {
     async fn save_job(&self, job: JobInfo) -> Result<(), Self::Error>;
 
     /// This method should return the job with the given ID regardless of what state the job is in.
-    async fn fetch_job(&self, id: u64) -> Result<Option<JobInfo>, Self::Error>;
+    async fn fetch_job(&self, id: Uuid) -> Result<Option<JobInfo>, Self::Error>;
 
     /// This should fetch a job ready to be processed from the queue
     ///
@@ -35,15 +35,15 @@ pub trait Storage: Clone + Send {
 
     /// This method tells the storage mechanism to mark the given job as being in the provided
     /// queue
-    async fn queue_job(&self, queue: &str, id: u64) -> Result<(), Self::Error>;
+    async fn queue_job(&self, queue: &str, id: Uuid) -> Result<(), Self::Error>;
 
     /// This method tells the storage mechanism to mark a given job as running
-    async fn run_job(&self, id: u64, runner_id: u64) -> Result<(), Self::Error>;
+    async fn run_job(&self, id: Uuid, runner_id: Uuid) -> Result<(), Self::Error>;
 
     /// This method tells the storage mechanism to remove the job
     ///
     /// This happens when a job has been completed or has failed too many times
-    async fn delete_job(&self, id: u64) -> Result<(), Self::Error>;
+    async fn delete_job(&self, id: Uuid) -> Result<(), Self::Error>;
 
     /// This method returns the current statistics, or Stats::default() if none exists.
     async fn get_stats(&self) -> Result<Stats, Self::Error>;
@@ -55,7 +55,7 @@ pub trait Storage: Clone + Send {
         F: Fn(Stats) -> Stats + Send + 'static;
 
     /// Generate a new job based on the provided NewJobInfo
-    async fn new_job(&self, job: NewJobInfo) -> Result<u64, Self::Error> {
+    async fn new_job(&self, job: NewJobInfo) -> Result<Uuid, Self::Error> {
         let id = self.generate_id().await?;
 
         let job = job.with_id(id);
@@ -72,7 +72,7 @@ pub trait Storage: Clone + Send {
     async fn request_job(
         &self,
         queue: &str,
-        runner_id: u64,
+        runner_id: Uuid,
     ) -> Result<Option<JobInfo>, Self::Error> {
         match self.fetch_job_from_queue(queue).await? {
             Some(mut job) => {
@@ -138,6 +138,7 @@ pub mod memory_storage {
     use chrono::Utc;
     use futures::lock::Mutex;
     use std::{collections::HashMap, convert::Infallible, sync::Arc};
+    use uuid::Uuid;
 
     #[derive(Clone)]
     /// An In-Memory store for jobs
@@ -147,11 +148,10 @@ pub mod memory_storage {
 
     #[derive(Clone)]
     struct Inner {
-        count: u64,
-        jobs: HashMap<u64, JobInfo>,
-        queues: HashMap<u64, String>,
-        worker_ids: HashMap<u64, u64>,
-        worker_ids_inverse: HashMap<u64, u64>,
+        jobs: HashMap<Uuid, JobInfo>,
+        queues: HashMap<Uuid, String>,
+        worker_ids: HashMap<Uuid, Uuid>,
+        worker_ids_inverse: HashMap<Uuid, Uuid>,
         stats: Stats,
     }
 
@@ -160,7 +160,6 @@ pub mod memory_storage {
         pub fn new() -> Self {
             Storage {
                 inner: Arc::new(Mutex::new(Inner {
-                    count: 0,
                     jobs: HashMap::new(),
                     queues: HashMap::new(),
                     worker_ids: HashMap::new(),
@@ -175,11 +174,15 @@ pub mod memory_storage {
     impl super::Storage for Storage {
         type Error = Infallible;
 
-        async fn generate_id(&self) -> Result<u64, Self::Error> {
-            let mut inner = self.inner.lock().await;
-            let id = inner.count;
-            inner.count = inner.count.wrapping_add(1);
-            Ok(id)
+        async fn generate_id(&self) -> Result<Uuid, Self::Error> {
+            let uuid = loop {
+                let uuid = Uuid::new_v4();
+                if !self.inner.lock().await.jobs.contains_key(&uuid) {
+                    break uuid;
+                }
+            };
+
+            Ok(uuid)
         }
 
         async fn save_job(&self, job: JobInfo) -> Result<(), Self::Error> {
@@ -188,7 +191,7 @@ pub mod memory_storage {
             Ok(())
         }
 
-        async fn fetch_job(&self, id: u64) -> Result<Option<JobInfo>, Self::Error> {
+        async fn fetch_job(&self, id: Uuid) -> Result<Option<JobInfo>, Self::Error> {
             let j = self.inner.lock().await.jobs.get(&id).map(|j| j.clone());
 
             Ok(j)
@@ -221,12 +224,12 @@ pub mod memory_storage {
             Ok(j)
         }
 
-        async fn queue_job(&self, queue: &str, id: u64) -> Result<(), Self::Error> {
+        async fn queue_job(&self, queue: &str, id: Uuid) -> Result<(), Self::Error> {
             self.inner.lock().await.queues.insert(id, queue.to_owned());
             Ok(())
         }
 
-        async fn run_job(&self, id: u64, worker_id: u64) -> Result<(), Self::Error> {
+        async fn run_job(&self, id: Uuid, worker_id: Uuid) -> Result<(), Self::Error> {
             let mut inner = self.inner.lock().await;
 
             inner.worker_ids.insert(id, worker_id);
@@ -234,7 +237,7 @@ pub mod memory_storage {
             Ok(())
         }
 
-        async fn delete_job(&self, id: u64) -> Result<(), Self::Error> {
+        async fn delete_job(&self, id: Uuid) -> Result<(), Self::Error> {
             let mut inner = self.inner.lock().await;
             inner.jobs.remove(&id);
             inner.queues.remove(&id);

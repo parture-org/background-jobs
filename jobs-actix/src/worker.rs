@@ -2,12 +2,13 @@ use crate::Server;
 use background_jobs_core::{CachedProcessorMap, JobInfo};
 use log::{debug, error, warn};
 use tokio::sync::mpsc::{channel, Sender};
+use uuid::Uuid;
 
 #[async_trait::async_trait]
 pub trait Worker {
     async fn process_job(&self, job: JobInfo) -> Result<(), JobInfo>;
 
-    fn id(&self) -> u64;
+    fn id(&self) -> Uuid;
 
     fn queue(&self) -> &str;
 }
@@ -15,7 +16,7 @@ pub trait Worker {
 #[derive(Clone)]
 pub(crate) struct LocalWorkerHandle {
     tx: Sender<JobInfo>,
-    id: u64,
+    id: Uuid,
     queue: String,
 }
 
@@ -31,7 +32,7 @@ impl Worker for LocalWorkerHandle {
         }
     }
 
-    fn id(&self) -> u64 {
+    fn id(&self) -> Uuid {
         self.id
     }
 
@@ -41,13 +42,14 @@ impl Worker for LocalWorkerHandle {
 }
 
 pub(crate) fn local_worker<State>(
-    id: u64,
     queue: String,
     processors: CachedProcessorMap<State>,
     server: Server,
 ) where
     State: Clone + 'static,
 {
+    let id = Uuid::new_v4();
+
     let (tx, mut rx) = channel(16);
 
     let handle = LocalWorkerHandle {

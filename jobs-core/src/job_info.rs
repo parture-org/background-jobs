@@ -2,30 +2,31 @@ use crate::{Backoff, JobResult, JobStatus, MaxRetries, ShouldStop};
 use chrono::{offset::Utc, DateTime, Duration};
 use log::trace;
 use serde_json::Value;
+use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 /// Information about the sate of an attempted job
 pub struct ReturnJobInfo {
-    pub(crate) id: u64,
+    pub(crate) id: Uuid,
     pub(crate) result: JobResult,
 }
 
 impl ReturnJobInfo {
-    pub(crate) fn fail(id: u64) -> Self {
+    pub(crate) fn fail(id: Uuid) -> Self {
         ReturnJobInfo {
             id,
             result: JobResult::Failure,
         }
     }
 
-    pub(crate) fn pass(id: u64) -> Self {
+    pub(crate) fn pass(id: Uuid) -> Self {
         ReturnJobInfo {
             id,
             result: JobResult::Success,
         }
     }
 
-    pub(crate) fn missing_processor(id: u64) -> Self {
+    pub(crate) fn missing_processor(id: Uuid) -> Self {
         ReturnJobInfo {
             id,
             result: JobResult::MissingProcessor,
@@ -94,7 +95,7 @@ impl NewJobInfo {
         self.next_queue.is_none()
     }
 
-    pub(crate) fn with_id(self, id: u64) -> JobInfo {
+    pub(crate) fn with_id(self, id: Uuid) -> JobInfo {
         JobInfo {
             id,
             processor: self.processor,
@@ -120,7 +121,7 @@ impl NewJobInfo {
 /// new_job method.
 pub struct JobInfo {
     /// ID of the job
-    id: u64,
+    id: Uuid,
 
     /// Name of the processor that should handle this job
     processor: String,
@@ -174,7 +175,7 @@ impl JobInfo {
     }
 
     /// The ID of this job
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> Uuid {
         self.id
     }
 

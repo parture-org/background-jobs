@@ -17,6 +17,7 @@ use actix_threadpool::{run, BlockingError};
 use background_jobs_core::{JobInfo, Stats, Storage};
 use chrono::offset::Utc;
 use sled_extensions::{bincode::Tree, cbor, Db, DbExt};
+use uuid::Uuid;
 
 /// The error produced by sled storage calls
 #[derive(Debug, thiserror::Error)]
@@ -37,11 +38,11 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// The Sled-backed storage implementation
 pub struct SledStorage {
     jobinfo: cbor::Tree<JobInfo>,
-    running: Tree<u64>,
-    running_inverse: Tree<u64>,
+    running: Tree<Uuid>,
+    running_inverse: Tree<Uuid>,
     queue: Tree<String>,
     stats: Tree<Stats>,
-    lock: Tree<u64>,
+    lock: Tree<Uuid>,
     db: Db,
 }
 
@@ -49,10 +50,21 @@ pub struct SledStorage {
 impl Storage for SledStorage {
     type Error = Error;
 
-    async fn generate_id(&self) -> Result<u64> {
+    async fn generate_id(&self) -> Result<Uuid> {
         let this = self.clone();
 
-        Ok(run(move || Ok(this.db.generate_id()?) as sled_extensions::Result<u64>).await?)
+        Ok(run(move || {
+            let uuid = loop {
+                let uuid = Uuid::new_v4();
+
+                if !this.jobinfo.contains_key(job_key(uuid))? {
+                    break uuid;
+                }
+            };
+
+            Ok(uuid) as sled_extensions::Result<Uuid>
+        })
+        .await?)
     }
 
     async fn save_job(&self, job: JobInfo) -> Result<()> {
@@ -66,7 +78,7 @@ impl Storage for SledStorage {
         .await?)
     }
 
-    async fn fetch_job(&self, id: u64) -> Result<Option<JobInfo>> {
+    async fn fetch_job(&self, id: Uuid) -> Result<Option<JobInfo>> {
         let this = self.clone();
 
         Ok(run(move || this.jobinfo.get(job_key(id))).await?)
@@ -111,7 +123,7 @@ impl Storage for SledStorage {
         .await?)
     }
 
-    async fn queue_job(&self, queue: &str, id: u64) -> Result<()> {
+    async fn queue_job(&self, queue: &str, id: Uuid) -> Result<()> {
         let this = self.clone();
         let queue = queue.to_owned();
 
@@ -125,7 +137,7 @@ impl Storage for SledStorage {
         .await?)
     }
 
-    async fn run_job(&self, id: u64, runner_id: u64) -> Result<()> {
+    async fn run_job(&self, id: Uuid, runner_id: Uuid) -> Result<()> {
         let this = self.clone();
 
         Ok(run(move || {
@@ -139,7 +151,7 @@ impl Storage for SledStorage {
         .await?)
     }
 
-    async fn delete_job(&self, id: u64) -> Result<()> {
+    async fn delete_job(&self, id: Uuid) -> Result<()> {
         let this = self.clone();
 
         Ok(run(move || {
@@ -204,7 +216,7 @@ impl SledStorage {
     where
         F: Fn() -> sled_extensions::Result<T>,
     {
-        let id = self.db.generate_id()?;
+        let id = Uuid::new_v4();
 
         let mut prev;
         while {
@@ -224,11 +236,11 @@ impl SledStorage {
     }
 }
 
-fn job_key(id: u64) -> String {
+fn job_key(id: Uuid) -> String {
     format!("job-{}", id)
 }
 
-fn runner_key(runner_id: u64) -> String {
+fn runner_key(runner_id: Uuid) -> String {
     format!("runner-{}", runner_id)
 }
 

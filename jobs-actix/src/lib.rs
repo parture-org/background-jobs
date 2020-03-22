@@ -213,42 +213,30 @@ where
 
     /// Start the workers in the current arbiter
     pub fn start(self, queue_handle: QueueHandle) {
-        let processors = self.processors.clone();
-
-        self.queues.into_iter().fold(0, |acc, (key, count)| {
-            (0..count).for_each(|i| {
+        for (key, count) in self.queues.into_iter() {
+            for _ in 0..count {
                 local_worker(
-                    acc + i + 1000,
                     key.clone(),
-                    processors.cached(),
+                    self.processors.cached(),
                     queue_handle.inner.clone(),
                 );
-            });
-
-            acc + count
-        });
+            }
+        }
     }
 
     /// Start the workers in the provided arbiter
     pub fn start_in_arbiter(self, arbiter: &Arbiter, queue_handle: QueueHandle) {
-        let processors = self.processors.clone();
-        self.queues.into_iter().fold(0, |acc, (key, count)| {
-            (0..count).for_each(|i| {
-                let processors = processors.clone();
-                let queue_handle = queue_handle.clone();
+        for (key, count) in self.queues.into_iter() {
+            for _ in 0..count {
                 let key = key.clone();
-                arbiter.exec_fn(move || {
-                    local_worker(
-                        acc + i + 1000,
-                        key.clone(),
-                        processors.cached(),
-                        queue_handle.inner.clone(),
-                    );
-                });
-            });
+                let processors = self.processors.clone();
+                let server = queue_handle.inner.clone();
 
-            acc + count
-        });
+                arbiter.exec_fn(move || {
+                    local_worker(key, processors.cached(), server);
+                });
+            }
+        }
     }
 }
 
