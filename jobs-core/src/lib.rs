@@ -136,6 +136,7 @@ impl std::fmt::Display for JobStatus {
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, thiserror::Error)]
 #[error("Invalid job status")]
+/// The error generated when parsing a job's status if it's not 'Pending' or 'Running'
 pub struct JobStatusError;
 
 impl std::str::FromStr for JobStatus {

@@ -179,6 +179,7 @@ impl JobInfo {
         self.id
     }
 
+    /// How long (in milliseconds) before this job is considered failed and can be requeued
     pub fn timeout(&self) -> i64 {
         self.timeout
     }
@@ -191,13 +192,18 @@ impl JobInfo {
         }
     }
 
+    /// If the job is queued to run in the future, when is that
+    pub fn next_queue(&self) -> Option<DateTime<Utc>> {
+        self.next_queue
+    }
+
     pub(crate) fn increment(&mut self) -> ShouldStop {
         self.updated();
         self.retry_count += 1;
         self.max_retries.compare(self.retry_count)
     }
 
-    fn next_queue(&mut self) {
+    fn set_next_queue(&mut self) {
         let now = Utc::now();
 
         let next_queue = match self.backoff_strategy {
@@ -231,7 +237,7 @@ impl JobInfo {
 
         if should_retry {
             self.pending();
-            self.next_queue();
+            self.set_next_queue();
         }
 
         should_retry
