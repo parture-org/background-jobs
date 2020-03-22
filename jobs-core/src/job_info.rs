@@ -90,10 +90,6 @@ impl NewJobInfo {
         &self.queue
     }
 
-    pub fn timeout(&self) -> i64 {
-        self.timeout
-    }
-
     /// Whether this job is ready to be run immediately
     pub fn is_ready(&self) -> bool {
         self.next_queue.is_none()
@@ -181,6 +177,10 @@ impl JobInfo {
     /// The ID of this job
     pub fn id(&self) -> Uuid {
         self.id
+    }
+
+    pub fn timeout(&self) -> i64 {
+        self.timeout
     }
 
     /// Convert a JobInfo into a ReturnJobInfo without executing it
