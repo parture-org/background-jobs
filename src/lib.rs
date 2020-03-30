@@ -208,7 +208,7 @@ pub use background_jobs_core::{
 };
 
 #[cfg(feature = "background-jobs-actix")]
-pub use background_jobs_actix::{create_server, QueueHandle, WorkerConfig};
+pub use background_jobs_actix::{create_server, ActixJob, QueueHandle, WorkerConfig};
 
 #[cfg(feature = "background-jobs-sled-storage")]
 pub mod sled_storage {

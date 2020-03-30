@@ -8,6 +8,8 @@
 
 use anyhow::Error;
 
+#[cfg(feature = "with-actix")]
+mod actix_job;
 mod job;
 mod job_info;
 mod processor;
@@ -23,6 +25,9 @@ pub use crate::{
     stats::{JobStat, Stats},
     storage::{memory_storage, Storage},
 };
+
+#[cfg(feature = "with-actix")]
+pub use actix_job::ActixJob;
 
 #[derive(Debug, thiserror::Error)]
 /// The error type returned by a `Processor`'s `process` method

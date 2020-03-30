@@ -14,7 +14,7 @@ actix = "0.10.0-alpha.2"
 actix-rt = "1.0.0"
 anyhow = "1.0"
 async-trait = "0.1.24"
-background-jobs-core = { version = "0.7", path = "../jobs-core" }
+background-jobs-core = { version = "0.7", path = "../jobs-core", features = ["with-actix"] }
 chrono = "0.4"
 log = "0.4"
 num_cpus = "1.10.0"

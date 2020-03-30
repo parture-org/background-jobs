@@ -139,6 +139,8 @@ mod worker;
 
 use self::{every::every, server::Server, worker::local_worker};
 
+pub use background_jobs_core::ActixJob;
+
 /// Create a new Server
 ///
 /// In previous versions of this library, the server itself was run on it's own dedicated threads
