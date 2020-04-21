@@ -163,5 +163,13 @@
 
 pub use background_jobs_core::{memory_storage, Backoff, Job, JobStat, MaxRetries, Stats};
 
+pub mod dev {
+    //! Useful types and methods for developing Storage and Processor implementations.
+    pub use background_jobs_core::{
+        new_job, new_scheduled_job, process, CachedProcessorMap, JobInfo, NewJobInfo, ProcessorMap,
+        ReturnJobInfo, Storage,
+    };
+}
+
 #[cfg(feature = "background-jobs-actix")]
 pub use background_jobs_actix::{create_server, ActixJob, QueueHandle, WorkerConfig};

@@ -119,7 +119,8 @@
 
 use actix::Arbiter;
 use anyhow::Error;
-use background_jobs_core::{new_job, Job, ProcessorMap, Stats, Storage};
+use background_jobs_core::{new_job, new_scheduled_job, Job, ProcessorMap, Stats, Storage};
+use chrono::{DateTime, Utc};
 use log::error;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
@@ -251,6 +252,24 @@ impl QueueHandle {
         J: Job,
     {
         let job = new_job(job)?;
+        let server = self.inner.clone();
+        actix::spawn(async move {
+            if let Err(e) = server.new_job(job).await {
+                error!("Error creating job, {}", e);
+            }
+        });
+        Ok(())
+    }
+
+    /// Schedule a job for execution later
+    ///
+    /// This job will be sent to the server for storage, and will execute after the specified time
+    /// and when a worker for the job's queue is free to do so.
+    pub fn schedule<J>(&self, job: J, after: DateTime<Utc>) -> Result<(), Error>
+    where
+        J: Job,
+    {
+        let job = new_scheduled_job(job, after)?;
         let server = self.inner.clone();
         actix::spawn(async move {
             if let Err(e) = server.new_job(job).await {
