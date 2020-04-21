@@ -1,4 +1,5 @@
 use crate::{Job, JobError, JobInfo, ReturnJobInfo};
+use chrono::Utc;
 use log::{error, info};
 use serde_json::Value;
 use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
@@ -112,13 +113,25 @@ async fn process<S>(process_fn: &ProcessFn<S>, state: S, job: JobInfo) -> Return
     let id = job.id();
     let name = job.name().to_owned();
 
-    match process_fn(args, state).await {
+    let start = Utc::now();
+    let res = process_fn(args, state).await;
+    let end = Utc::now();
+
+    let duration = end - start;
+    let microseconds = duration.num_microseconds();
+    let seconds: f64 = if let Some(m) = microseconds {
+        m as f64 / 1_000_000_f64
+    } else {
+        0_f64
+    };
+
+    match res {
         Ok(_) => {
-            info!("Job {} completed, {}", id, name);
+            info!("Job {} {} completed {:.6}", id, name, seconds);
             ReturnJobInfo::pass(id)
         }
         Err(e) => {
-            info!("Job {} errored, {}, {}", id, name, e);
+            info!("Job {} {} errored {} {:.6}", id, name, e, seconds);
             ReturnJobInfo::fail(id)
         }
     }
