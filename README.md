@@ -7,14 +7,14 @@ might not be the best experience.
 
 - [Read the documentation on docs.rs](https://docs.rs/background-jobs)
 - [Find the crate on crates.io](https://crates.io/crates/background-jobs)
-- [Join the discussion on Matrix](https://matrix.to/#/!vZKoAKLpHaFIWjRxpT:asonix.dog?via=asonix.dog)
+- [Hit me up on Mastodon](https://asonix.dog/@asonix)
 
 ### Usage
 #### Add Background Jobs to your project
 ```toml
 [dependencies]
 actix = "0.8"
-background-jobs = "0.7.0"
+background-jobs = "0.8.0-alpha.1"
 failure = "0.1"
 futures = "0.1"
 serde = "1.0"
@@ -47,9 +47,10 @@ impl MyJob {
 }
 
 impl Job for MyJob {
-    type Processor = MyProcessor; // We will define this later
     type State = ();
     type Future = Result<(), Error>;
+
+    const NAME: &'static str = "MyJob";
 
     fn run(self, _: Self::State) -> Self::Future {
         info!("args: {:?}", self);
@@ -81,38 +82,13 @@ impl MyState {
 }
 
 impl Job for MyJob {
-    type Processor = MyProcessor; // We will define this later
     type State = MyState;
     type Future = Result<(), Error>;
 
-    fn run(self, state: Self::State) -> Self::Future {
-        info!("{}: args, {:?}", state.app_name, self);
-
-        Ok(())
-    }
-}
-```
-
-#### Next, define a Processor.
-Processors are types that define default attributes for jobs, as well as containing some logic
-used internally to perform the job. Processors must implement `Proccessor` and `Clone`.
-
-```rust
-use background_jobs::{Backoff, MaxRetries, Processor};
-
-const DEFAULT_QUEUE: &'static str = "default";
-
-#[derive(Clone, Debug)]
-pub struct MyProcessor;
-
-impl Processor for MyProcessor {
-    // The kind of job this processor should execute
-    type Job = MyJob;
-
-    // The name of the processor. It is super important that each processor has a unique name,
-    // because otherwise one processor will overwrite another processor when they're being
+    // The name of the job. It is super important that each job has a unique name,
+    // because otherwise one job will overwrite another job when they're being
     // registered.
-    const NAME: &'static str = "MyProcessor";
+    const NAME: &'static str = "MyJob";
 
     // The queue that this processor belongs to
     //
@@ -130,7 +106,13 @@ impl Processor for MyProcessor {
     // The logic to determine how often to retry this job if it fails
     //
     // Jobs can optionally override this value
-    const BACKOFF_STRATEGY: Backoff = Backoff::Exponential(2);
+    const BACKOFF: Backoff = Backoff::Exponential(2);
+
+    fn run(self, state: Self::State) -> Self::Future {
+        info!("{}: args, {:?}", state.app_name, self);
+
+        Ok(())
+    }
 }
 ```
 
@@ -153,10 +135,9 @@ use actix::System;
 use background_jobs::{ServerConfig, WorkerConfig};
 use failure::Error;
 
-fn main() -> Result<(), Error> {
-    // First set up the Actix System to ensure we have a runtime to spawn jobs on.
-    let sys = System::new("my-actix-system");
-
+#[actix_rt::main]
+async fn main() -> Result<(), Error> {
+    env_logger::init();
     // Set up our Storage
     // For this example, we use the default in-memory storage mechanism
     use background_jobs::memory_storage::Storage;
@@ -164,19 +145,19 @@ fn main() -> Result<(), Error> {
 
     /*
     // Optionally, a storage backend using the Sled database is provided
-    use sled::{ConfigBuilder, Db};
     use background_jobs::sled_storage::Storage;
-    let db = Db::start(ConfigBuilder::default().temporary(true).build())?;
+    use sled_extensions::Db;
+    let db = Db::open("my-sled-db")?;
     let storage = Storage::new(db)?;
     */
 
     // Start the application server. This guards access to to the jobs store
-    let queue_handle = ServerConfig::new(storage).thread_count(8).start();
+    let queue_handle = create_server(storage);
 
     // Configure and start our workers
     WorkerConfig::new(move || MyState::new("My App"))
-        .register(MyProcessor)
-        .set_processor_count(DEFAULT_QUEUE, 16)
+        .register::<MyJob>()
+        .set_worker_count(DEFAULT_QUEUE, 16)
         .start(queue_handle.clone());
 
     // Queue our jobs
@@ -185,7 +166,7 @@ fn main() -> Result<(), Error> {
     queue_handle.queue(MyJob::new(5, 6))?;
 
     // Block on Actix
-    sys.run()?;
+    actix_rt::signal::ctrl_c().await?;
     Ok(())
 }
 ```
@@ -195,7 +176,7 @@ For the complete example project, see [the examples folder](https://git.asonix.d
 
 #### Bringing your own server/worker implementation
 If you want to create your own jobs processor based on this idea, you can depend on the
-`background-jobs-core` crate, which provides the Processor and Job traits, as well as some
+`background-jobs-core` crate, which provides the Job trait, as well as some
 other useful types for implementing a jobs processor and job store.
 
 ### Contributing

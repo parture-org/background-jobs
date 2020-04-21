@@ -61,9 +61,10 @@
 //! }
 //!
 //! impl Job for MyJob {
-//!     type Processor = MyProcessor; // We'll define this later
 //!     type State = ();
 //!     type Future = Ready<Result<(), Error>>;
+//!
+//!     const NAME: &'static str = "MyJob";
 //!
 //!     fn run(self, _: Self::State) -> Self::Future {
 //!         println!("args: {:?}", self);
@@ -97,56 +98,16 @@
 //! }
 //!
 //! impl Job for MyJob {
-//!     type Processor = MyProcessor;
 //!     type State = MyState;
 //!     type Future = Ready<Result<(), Error>>;
+//!
+//!     const NAME: &'static str = "MyJob";
 //!
 //!     fn run(self, state: Self::State) -> Self::Future {
 //!         info!("{}: args, {:?}", state.app_name, self);
 //!
 //!         ok(())
 //!     }
-//! }
-//! ```
-//!
-//! #### Next, define a Processor.
-//! Processors are types that define default attributes for jobs, as well as containing some logic
-//! used internally to perform the job. Processors must implement `Proccessor` and `Clone`.
-//!
-//! ```rust,ignore
-//! use background_jobs::{Backoff, MaxRetries, Processor};
-//!
-//! const DEFAULT_QUEUE: &'static str = "default";
-//!
-//! #[derive(Clone, Debug)]
-//! pub struct MyProcessor;
-//!
-//! impl Processor for MyProcessor {
-//!     // The kind of job this processor should execute
-//!     type Job = MyJob;
-//!
-//!     // The name of the processor. It is super important that each processor has a unique name,
-//!     // because otherwise one processor will overwrite another processor when they're being
-//!     // registered.
-//!     const NAME: &'static str = "MyProcessor";
-//!
-//!     // The queue that this processor belongs to
-//!     //
-//!     // Workers have the option to subscribe to specific queues, so this is important to
-//!     // determine which worker will call the processor
-//!     //
-//!     // Jobs can optionally override the queue they're spawned on
-//!     const QUEUE: &'static str = DEFAULT_QUEUE;
-//!
-//!     // The number of times background-jobs should try to retry a job before giving up
-//!     //
-//!     // Jobs can optionally override this value
-//!     const MAX_RETRIES: MaxRetries = MaxRetries::Count(1);
-//!
-//!     // The logic to determine how often to retry this job if it fails
-//!     //
-//!     // Jobs can optionally override this value
-//!     const BACKOFF_STRATEGY: Backoff = Backoff::Exponential(2);
 //! }
 //! ```
 //!
@@ -179,14 +140,14 @@
 //!
 //!     // Configure and start our workers
 //!     WorkerConfig::new(move || MyState::new("My App"))
-//!         .register(MyProcessor)
+//!         .register::<MyJob>()
 //!         .set_processor_count(DEFAULT_QUEUE, 16)
 //!         .start(queue_handle.clone());
 //!
 //!     // Queue our jobs
-//!     queue_handle.queue::<MyProcessor>(MyJob::new(1, 2))?;
-//!     queue_handle.queue::<MyProcessor>(MyJob::new(3, 4))?;
-//!     queue_handle.queue::<MyProcessor>(MyJob::new(5, 6))?;
+//!     queue_handle.queue(MyJob::new(1, 2))?;
+//!     queue_handle.queue(MyJob::new(3, 4))?;
+//!     queue_handle.queue(MyJob::new(5, 6))?;
 //!
 //!     // Block on Actix
 //!     actix_rt::signal::ctrl_c().await?;
@@ -200,12 +161,10 @@
 //!
 //! #### Bringing your own server/worker implementation
 //! If you want to create your own jobs processor based on this idea, you can depend on the
-//! `background-jobs-core` crate, which provides the Processor and Job traits, as well as some
+//! `background-jobs-core` crate, which provides the Job trait, as well as some
 //! other useful types for implementing a jobs processor and job store.
 
-pub use background_jobs_core::{
-    memory_storage, Backoff, Job, JobStat, MaxRetries, Processor, Stats,
-};
+pub use background_jobs_core::{memory_storage, Backoff, Job, JobStat, MaxRetries, Stats};
 
 #[cfg(feature = "background-jobs-actix")]
 pub use background_jobs_actix::{create_server, ActixJob, QueueHandle, WorkerConfig};

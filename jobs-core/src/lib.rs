@@ -12,15 +12,13 @@ use anyhow::Error;
 mod actix_job;
 mod job;
 mod job_info;
-mod processor;
 mod processor_map;
 mod stats;
 mod storage;
 
 pub use crate::{
-    job::Job,
+    job::{new_job, new_scheduled_job, process, Job},
     job_info::{JobInfo, NewJobInfo, ReturnJobInfo},
-    processor::Processor,
     processor_map::{CachedProcessorMap, ProcessorMap},
     stats::{JobStat, Stats},
     storage::{memory_storage, Storage},
@@ -30,7 +28,7 @@ pub use crate::{
 pub use actix_job::ActixJob;
 
 #[derive(Debug, thiserror::Error)]
-/// The error type returned by a `Processor`'s `process` method
+/// The error type returned by the `process` method
 pub enum JobError {
     /// Some error occurred while processing the job
     #[error("Error performing job: {0}")]
@@ -40,9 +38,9 @@ pub enum JobError {
     #[error("Could not make JSON value from arguments")]
     Json,
 
-    /// No processor was present to handle a given job
-    #[error("No processor available for job")]
-    MissingProcessor,
+    /// This job type was not registered for this client
+    #[error("This job type was not registered for the client")]
+    Unregistered,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -54,8 +52,8 @@ pub enum JobResult {
     /// The job failed
     Failure,
 
-    /// There was no processor to run the job
-    MissingProcessor,
+    /// The worker had no concept of this job
+    Unregistered,
 
     /// The worker requesting this job closed
     Unexecuted,
@@ -72,9 +70,9 @@ impl JobResult {
         JobResult::Failure
     }
 
-    /// Indicate that the job's processor is not present
-    pub fn missing_processor() -> Self {
-        JobResult::MissingProcessor
+    /// Indicate that the job was not registered for this worker
+    pub fn unregistered() -> Self {
+        JobResult::Unregistered
     }
 
     /// Check if the job failed
@@ -88,8 +86,8 @@ impl JobResult {
     }
 
     /// Check if the job is missing it's processor
-    pub fn is_missing_processor(&self) -> bool {
-        *self == JobResult::MissingProcessor
+    pub fn is_unregistered(&self) -> bool {
+        *self == JobResult::Unregistered
     }
 
     /// Check if the job was returned without an execution attempt

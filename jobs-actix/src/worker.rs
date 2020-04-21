@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 #[async_trait::async_trait]
 pub trait Worker {
-    async fn process_job(&self, job: JobInfo) -> Result<(), JobInfo>;
+    async fn process(&self, job: JobInfo) -> Result<(), JobInfo>;
 
     fn id(&self) -> Uuid;
 
@@ -22,7 +22,7 @@ pub(crate) struct LocalWorkerHandle {
 
 #[async_trait::async_trait]
 impl Worker for LocalWorkerHandle {
-    async fn process_job(&self, job: JobInfo) -> Result<(), JobInfo> {
+    async fn process(&self, job: JobInfo) -> Result<(), JobInfo> {
         match self.tx.clone().send(job).await {
             Err(e) => {
                 error!("Unable to send job");
@@ -65,7 +65,7 @@ pub(crate) fn local_worker<State>(
             return;
         }
         while let Some(job) = rx.recv().await {
-            let return_job = processors.process_job(job).await;
+            let return_job = processors.process(job).await;
 
             if let Err(e) = server.return_job(return_job).await {
                 error!("Error returning job, {}", e);

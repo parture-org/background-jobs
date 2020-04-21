@@ -26,10 +26,10 @@ impl ReturnJobInfo {
         }
     }
 
-    pub(crate) fn missing_processor(id: Uuid) -> Self {
+    pub(crate) fn unregistered(id: Uuid) -> Self {
         ReturnJobInfo {
             id,
-            result: JobResult::MissingProcessor,
+            result: JobResult::Unregistered,
         }
     }
 }
@@ -37,8 +37,8 @@ impl ReturnJobInfo {
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 /// Information about a newly created job
 pub struct NewJobInfo {
-    /// Name of the processor that should handle this job
-    processor: String,
+    /// Name of the job
+    name: String,
 
     /// Name of the queue that this job is a part of
     queue: String,
@@ -67,15 +67,15 @@ impl NewJobInfo {
     }
 
     pub(crate) fn new(
-        processor: String,
+        name: String,
         queue: String,
-        args: Value,
         max_retries: MaxRetries,
         backoff_strategy: Backoff,
         timeout: i64,
+        args: Value,
     ) -> Self {
         NewJobInfo {
-            processor,
+            name,
             queue,
             args,
             max_retries,
@@ -98,7 +98,7 @@ impl NewJobInfo {
     pub(crate) fn with_id(self, id: Uuid) -> JobInfo {
         JobInfo {
             id,
-            processor: self.processor,
+            name: self.name,
             queue: self.queue,
             status: JobStatus::Pending,
             args: self.args,
@@ -116,15 +116,13 @@ impl NewJobInfo {
 /// Metadata pertaining to a job that exists within the background_jobs system
 ///
 /// Although exposed publically, this type should only really be handled by the library itself, and
-/// is impossible to create outside of a
-/// [Processor](https://docs.rs/background-jobs/0.4.0/background_jobs/trait.Processor.html)'s
-/// new_job method.
+/// is impossible to create outside of the new_job method.
 pub struct JobInfo {
     /// ID of the job
     id: Uuid,
 
-    /// Name of the processor that should handle this job
-    processor: String,
+    /// Name of the job
+    name: String,
 
     /// Name of the queue that this job is a part of
     queue: String,
@@ -166,8 +164,8 @@ impl JobInfo {
         self.updated_at = Utc::now();
     }
 
-    pub(crate) fn processor(&self) -> &str {
-        &self.processor
+    pub(crate) fn name(&self) -> &str {
+        &self.name
     }
 
     pub(crate) fn args(&self) -> Value {

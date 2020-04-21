@@ -14,7 +14,7 @@
 //! ```rust,ignore
 //! use actix::System;
 //! use anyhow::Error;
-//! use background_jobs::{create_server, Backoff, Job, MaxRetries, Processor, WorkerConfig};
+//! use background_jobs::{create_server, Backoff, Job, MaxRetries, WorkerConfig};
 //! use futures::future::{ok, Ready};
 //!
 //! const DEFAULT_QUEUE: &'static str = "default";
@@ -30,9 +30,6 @@
 //!     other_usize: usize,
 //! }
 //!
-//! #[derive(Clone, Debug)]
-//! pub struct MyProcessor;
-//!
 //! #[actix_rt::main]
 //! async fn main() -> Result<(), Error> {
 //!     // Set up our Storage
@@ -45,8 +42,8 @@
 //!
 //!     // Configure and start our workers
 //!     WorkerConfig::new(move || MyState::new("My App"))
-//!         .register(MyProcessor)
-//!         .set_processor_count(DEFAULT_QUEUE, 16)
+//!         .register::<MyJob>()
+//!         .set_worker_count(DEFAULT_QUEUE, 16)
 //!         .start(queue_handle.clone());
 //!
 //!     // Queue our jobs
@@ -78,25 +75,13 @@
 //!
 //! #[async_trait::async_trait]
 //! impl Job for MyJob {
-//!     type Processor = MyProcessor;
 //!     type State = MyState;
 //!     type Future = Ready<Result<(), Error>>;
 //!
-//!     async fn run(self, state: MyState) -> Self::Future {
-//!         println!("{}: args, {:?}", state.app_name, self);
-//!
-//!         ok(())
-//!     }
-//! }
-//!
-//! impl Processor for MyProcessor {
-//!     // The kind of job this processor should execute
-//!     type Job = MyJob;
-//!
-//!     // The name of the processor. It is super important that each processor has a unique name,
-//!     // because otherwise one processor will overwrite another processor when they're being
+//!     // The name of the job. It is super important that each job has a unique name,
+//!     // because otherwise one job will overwrite another job when they're being
 //!     // registered.
-//!     const NAME: &'static str = "MyProcessor";
+//!     const NAME: &'static str = "MyJob";
 //!
 //!     // The queue that this processor belongs to
 //!     //
@@ -123,12 +108,18 @@
 //!     // The timeout defines when a job is allowed to be considered dead, and so can be retried
 //!     // by the job processor. The value is in milliseconds and defaults to 15,000
 //!     const TIMEOUT: i64 = 15_000
+//!
+//!     async fn run(self, state: MyState) -> Self::Future {
+//!         println!("{}: args, {:?}", state.app_name, self);
+//!
+//!         ok(())
+//!     }
 //! }
 //! ```
 
 use actix::Arbiter;
 use anyhow::Error;
-use background_jobs_core::{Job, Processor, ProcessorMap, Stats, Storage};
+use background_jobs_core::{new_job, Job, ProcessorMap, Stats, Storage};
 use log::error;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
@@ -160,7 +151,7 @@ where
 /// Worker Configuration
 ///
 /// This type is used for configuring and creating workers to process jobs. Before starting the
-/// workers, register `Processor` types with this struct. This worker registration allows for
+/// workers, register `Job` types with this struct. This worker registration allows for
 /// different worker processes to handle different sets of workers.
 #[derive(Clone)]
 pub struct WorkerConfig<State>
@@ -187,18 +178,17 @@ where
         }
     }
 
-    /// Register a `Processor` with the worker
+    /// Register a `Job` with the worker
     ///
     /// This enables the worker to handle jobs associated with this processor. If a processor is
     /// not registered, none of it's jobs will be run, even if another processor handling the same
     /// job queue is registered.
-    pub fn register<P, J>(mut self, processor: P) -> Self
+    pub fn register<J>(mut self) -> Self
     where
-        P: Processor<Job = J> + Send + Sync + 'static,
         J: Job<State = State>,
     {
-        self.queues.insert(P::QUEUE.to_owned(), 4);
-        self.processors.register_processor(processor);
+        self.queues.insert(J::QUEUE.to_owned(), 4);
+        self.processors.register::<J>();
         self
     }
 
@@ -208,7 +198,7 @@ where
     /// will handle processing all workers, regardless of how many are configured.
     ///
     /// By default, 4 workers are spawned
-    pub fn set_processor_count(mut self, queue: &str, count: u64) -> Self {
+    pub fn set_worker_count(mut self, queue: &str, count: u64) -> Self {
         self.queues.insert(queue.to_owned(), count);
         self
     }
@@ -260,7 +250,7 @@ impl QueueHandle {
     where
         J: Job,
     {
-        let job = J::Processor::new_job(job)?;
+        let job = new_job(job)?;
         let server = self.inner.clone();
         actix::spawn(async move {
             if let Err(e) = server.new_job(job).await {

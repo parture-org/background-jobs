@@ -116,7 +116,7 @@ pub trait Storage: Clone + Send {
             } else {
                 Ok(())
             }
-        } else if result.is_missing_processor() || result.is_unexecuted() {
+        } else if result.is_unregistered() || result.is_unexecuted() {
             if let Some(mut job) = self.fetch_job(id).await? {
                 job.pending();
                 self.queue_job(job.queue(), id).await?;

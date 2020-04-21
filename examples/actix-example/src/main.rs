@@ -1,5 +1,5 @@
 use anyhow::Error;
-use background_jobs::{create_server, Job, MaxRetries, Processor, WorkerConfig};
+use background_jobs::{create_server, Job, MaxRetries, WorkerConfig};
 use futures::future::{ok, Ready};
 
 const DEFAULT_QUEUE: &'static str = "default";
@@ -14,9 +14,6 @@ pub struct MyJob {
     some_usize: usize,
     other_usize: usize,
 }
-
-#[derive(Clone, Debug)]
-pub struct MyProcessor;
 
 #[actix_rt::main]
 async fn main() -> Result<(), Error> {
@@ -39,8 +36,8 @@ async fn main() -> Result<(), Error> {
 
     // Configure and start our workers
     WorkerConfig::new(move || MyState::new("My App"))
-        .register(MyProcessor)
-        .set_processor_count(DEFAULT_QUEUE, 16)
+        .register::<MyJob>()
+        .set_worker_count(DEFAULT_QUEUE, 16)
         .start(queue_handle.clone());
 
     // Queue our jobs
@@ -72,25 +69,13 @@ impl MyJob {
 
 #[async_trait::async_trait]
 impl Job for MyJob {
-    type Processor = MyProcessor;
     type State = MyState;
     type Future = Ready<Result<(), Error>>;
 
-    fn run(self, state: MyState) -> Self::Future {
-        println!("{}: args, {:?}", state.app_name, self);
-
-        ok(())
-    }
-}
-
-impl Processor for MyProcessor {
-    // The kind of job this processor should execute
-    type Job = MyJob;
-
-    // The name of the processor. It is super important that each processor has a unique name,
-    // because otherwise one processor will overwrite another processor when they're being
+    // The name of the job. It is super important that each job has a unique name,
+    // because otherwise one job will overwrite another job when they're being
     // registered.
-    const NAME: &'static str = "MyProcessor";
+    const NAME: &'static str = "MyJob";
 
     // The queue that this processor belongs to
     //
@@ -104,4 +89,10 @@ impl Processor for MyProcessor {
     //
     // Jobs can optionally override this value
     const MAX_RETRIES: MaxRetries = MaxRetries::Count(1);
+
+    fn run(self, state: MyState) -> Self::Future {
+        println!("{}: args, {:?}", state.app_name, self);
+
+        ok(())
+    }
 }

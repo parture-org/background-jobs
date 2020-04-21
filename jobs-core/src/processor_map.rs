@@ -1,21 +1,20 @@
-use crate::{Job, JobError, JobInfo, Processor, ReturnJobInfo};
+use crate::{Job, JobError, JobInfo, ReturnJobInfo};
 use log::{error, info};
 use serde_json::Value;
 use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
 /// A generic function that processes a job
 ///
-/// Instead of storing [`Processor`] type directly, the [`ProcessorMap`]
-/// struct stores these `ProcessFn` types that don't expose differences in Job types.
+/// ProcessorMap stores these `ProcessFn` types that don't expose differences in Job types.
 pub type ProcessFn<S> = Arc<
     dyn Fn(Value, S) -> Pin<Box<dyn Future<Output = Result<(), JobError>> + Send>> + Send + Sync,
 >;
 
 pub type StateFn<S> = Arc<dyn Fn() -> S + Send + Sync>;
 
-/// A type for storing the relationships between processor names and the processor itself
+/// A type for storing the relationships between job names and the job itself
 ///
-/// [`Processor`s] must be registered with  the `ProcessorMap` in the initialization phase of an
+/// [`Job`]s must be registered with  the `ProcessorMap` in the initialization phase of an
 /// application before workers are spawned in order to handle queued jobs.
 #[derive(Clone)]
 pub struct ProcessorMap<S> {
@@ -23,10 +22,10 @@ pub struct ProcessorMap<S> {
     state_fn: StateFn<S>,
 }
 
-/// A type for storing the relationships between processor names and the processor itself, with the
+/// A type for storing the relationships between job names and the job itself, with the
 /// state pre-cached instead of being generated from the state function each time
 ///
-/// [`Processor`s] must be registered with  the `ProcessorMap` in the initialization phase of an
+/// [`Job`]s must be registered with  the `ProcessorMap` in the initialization phase of an
 /// application before workers are spawned in order to handle queued jobs.
 pub struct CachedProcessorMap<S> {
     inner: HashMap<String, ProcessFn<S>>,
@@ -49,18 +48,17 @@ where
         }
     }
 
-    /// Register a [`Processor`] with this `ProcessorMap`.
+    /// Register a [`Job`] with this `ProcessorMap`.
     ///
-    /// `ProcessorMap`s are useless if no processors are registerd before workers are spawned, so
+    /// `ProcessorMap`s are useless if no jobs are registerd before workers are spawned, so
     /// make sure to register all your processors up-front.
-    pub fn register_processor<P, J>(&mut self, processor: P)
+    pub fn register<J>(&mut self)
     where
-        P: Processor<Job = J> + Sync + Send + 'static,
         J: Job<State = S>,
     {
         self.inner.insert(
-            P::NAME.to_owned(),
-            Arc::new(move |value, state| processor.process(value, state)),
+            J::NAME.to_owned(),
+            Arc::new(move |value, state| crate::process::<J>(value, state)),
         );
     }
 
@@ -76,17 +74,17 @@ where
     ///
     /// This should not be called from outside implementations of a backgoround-jobs runtime. It is
     /// intended for internal use.
-    pub async fn process_job(&self, job: JobInfo) -> ReturnJobInfo {
+    pub async fn process(&self, job: JobInfo) -> ReturnJobInfo {
         let opt = self
             .inner
-            .get(job.processor())
-            .map(|processor| process(processor, (self.state_fn)(), job.clone()));
+            .get(job.name())
+            .map(|name| process(name, (self.state_fn)(), job.clone()));
 
         if let Some(fut) = opt {
             fut.await
         } else {
-            error!("Processor {} not present", job.processor());
-            ReturnJobInfo::missing_processor(job.id())
+            error!("Job {} not registered", job.name());
+            ReturnJobInfo::unregistered(job.id())
         }
     }
 }
@@ -99,12 +97,12 @@ where
     ///
     /// This should not be called from outside implementations of a backgoround-jobs runtime. It is
     /// intended for internal use.
-    pub async fn process_job(&self, job: JobInfo) -> ReturnJobInfo {
-        if let Some(processor) = self.inner.get(job.processor()) {
-            process(processor, self.state.clone(), job).await
+    pub async fn process(&self, job: JobInfo) -> ReturnJobInfo {
+        if let Some(name) = self.inner.get(job.name()) {
+            process(name, self.state.clone(), job).await
         } else {
-            error!("Processor {} not present", job.processor());
-            ReturnJobInfo::missing_processor(job.id())
+            error!("Job {} not registered", job.name());
+            ReturnJobInfo::unregistered(job.id())
         }
     }
 }
@@ -112,15 +110,15 @@ where
 async fn process<S>(process_fn: &ProcessFn<S>, state: S, job: JobInfo) -> ReturnJobInfo {
     let args = job.args();
     let id = job.id();
-    let processor = job.processor().to_owned();
+    let name = job.name().to_owned();
 
     match process_fn(args, state).await {
         Ok(_) => {
-            info!("Job {} completed, {}", id, processor);
+            info!("Job {} completed, {}", id, name);
             ReturnJobInfo::pass(id)
         }
         Err(e) => {
-            info!("Job {} errored, {}, {}", id, processor, e);
+            info!("Job {} errored, {}, {}", id, name, e);
             ReturnJobInfo::fail(id)
         }
     }
