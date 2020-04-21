@@ -1,12 +1,12 @@
 [package]
 name = "background-jobs"
-description = "Background Jobs implemented with sled, actix, and futures"
+description = "Background Jobs implemented with actix and futures"
 version = "0.8.0-alpha.1"
 license-file = "LICENSE"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/Aardwolf/background-jobs"
 readme = "README.md"
-keywords = ["jobs", "processor", "actix", "sled"]
+keywords = ["jobs", "processor", "actix"]
 edition = "2018"
 
 [workspace]
@@ -18,7 +18,7 @@ members = [
 ]
 
 [features]
-default = ["background-jobs-actix", "background-jobs-sled-storage"]
+default = ["background-jobs-actix"]
 
 [dependencies.background-jobs-core]
 version = "0.8.0-alpha.0"
@@ -27,9 +27,4 @@ path = "jobs-core"
 [dependencies.background-jobs-actix]
 version = "0.8.0-alpha.0"
 path = "jobs-actix"
-optional = true
-
-[dependencies.background-jobs-sled-storage]
-version = "0.8.0-alpha.0"
-path = "jobs-sled"
 optional = true

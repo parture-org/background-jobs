@@ -33,7 +33,6 @@
 //! anyhow = "1.0"
 //! futures = "0.1"
 //! serde = { version = "1.0", features = ["derive"] }
-//! sled = "0.28"
 //! ```
 //!
 //! #### To get started with Background Jobs, first you should define a job.
@@ -83,6 +82,8 @@
 //!
 //! ```rust,ignore
 //! use anyhow::Error;
+//! use background_jobs::Job;
+//! use futures::future::{ok, Ready};
 //!
 //! #[derive(Clone, Debug)]
 //! pub struct MyState {
@@ -117,23 +118,19 @@
 //! spawning new jobs.
 //!
 //! `background-jobs-actix` on it's own doesn't have a mechanism for storing worker state. This
-//! can be implemented manually by implementing the `Storage` trait from `background-jobs-core`,
-//! or the `background-jobs-sled-storage` crate can be used to provide a
-//! [Sled](https://github.com/spacejam/sled)-backed jobs store.
+//! can be implemented manually by implementing the `Storage` trait from `background-jobs-core`, or the provided in-memory store can be used.
 //!
 //! With that out of the way, back to the examples:
 //!
 //! ##### Main
 //! ```rust,ignore
 //! use anyhow::Error;
-//! use background_jobs::{ServerConfig, sled_storage::Storage, WorkerConfig};
-//! use sled::Db;
+//! use background_jobs::{ServerConfig, memory_storage::Storage, WorkerConfig};
 //!
 //! #[actix_rt::main]
 //! async fn main() -> Result<(), Error> {
 //!     // Set up our Storage
-//!     let db = Db::start_default("my-sled-db")?;
-//!     let storage = Storage::new(db)?;
+//!     let storage = Storage::new();
 //!
 //!     // Start the application server. This guards access to to the jobs store
 //!     let queue_handle = ServerConfig::new(storage).start();
@@ -168,8 +165,3 @@ pub use background_jobs_core::{memory_storage, Backoff, Job, JobStat, MaxRetries
 
 #[cfg(feature = "background-jobs-actix")]
 pub use background_jobs_actix::{create_server, ActixJob, QueueHandle, WorkerConfig};
-
-#[cfg(feature = "background-jobs-sled-storage")]
-pub mod sled_storage {
-    pub use background_jobs_sled_storage::{Error, SledStorage as Storage};
-}

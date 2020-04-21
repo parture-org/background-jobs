@@ -13,13 +13,11 @@ might not be the best experience.
 #### Add Background Jobs to your project
 ```toml
 [dependencies]
-actix = "0.8"
+actix = "0.10.0-alpha.0"
 background-jobs = "0.8.0-alpha.1"
-failure = "0.1"
-futures = "0.1"
-serde = "1.0"
-serde_drive = "1.0"
-sled = "0.29"
+anyhow = "1.0"
+futures = "0.3.4"
+serde = { version = "1.0", features = ["derive"] }
 ```
 
 #### To get started with Background Jobs, first you should define a job.
@@ -28,10 +26,10 @@ operation. They implment the `Job`, `serde::Serialize`, and `serde::DeserializeO
 
 ```rust
 use background_jobs::Job;
-use failure::Error;
-use serde_derive::{Deserialize, Serialize};
+use anyhow::Error;
+use futures::future::{ok, Ready};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct MyJob {
     some_usize: usize,
     other_usize: usize,
@@ -48,14 +46,14 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = ();
-    type Future = Result<(), Error>;
+    type Future = Ready<Result<(), Error>>;
 
     const NAME: &'static str = "MyJob";
 
     fn run(self, _: Self::State) -> Self::Future {
         info!("args: {:?}", self);
 
-        Ok(())
+        ok(())
     }
 }
 ```
@@ -83,7 +81,7 @@ impl MyState {
 
 impl Job for MyJob {
     type State = MyState;
-    type Future = Result<(), Error>;
+    type Future = Ready<Result<(), Error>>;
 
     // The name of the job. It is super important that each job has a unique name,
     // because otherwise one job will overwrite another job when they're being
@@ -111,7 +109,7 @@ impl Job for MyJob {
     fn run(self, state: Self::State) -> Self::Future {
         info!("{}: args, {:?}", state.app_name, self);
 
-        Ok(())
+        ok(())
     }
 }
 ```
@@ -123,17 +121,14 @@ spawning new jobs.
 
 `background-jobs-actix` on it's own doesn't have a mechanism for storing worker state. This
 can be implemented manually by implementing the `Storage` trait from `background-jobs-core`,
-the in-memory store provided in the `background-jobs-core` crate can be used, or the
-`background-jobs-sled-storage` crate can be used to provide a
-[Sled](https://github.com/spacejam/sled)-backed jobs store.
+or the provided in-memory store can be used.
 
 With that out of the way, back to the examples:
 
 ##### Main
 ```rust
-use actix::System;
-use background_jobs::{ServerConfig, WorkerConfig};
-use failure::Error;
+use background_jobs::{create_server, WorkerConfig};
+use anyhow::Error;
 
 #[actix_rt::main]
 async fn main() -> Result<(), Error> {
@@ -142,14 +137,6 @@ async fn main() -> Result<(), Error> {
     // For this example, we use the default in-memory storage mechanism
     use background_jobs::memory_storage::Storage;
     let storage = Storage::new();
-
-    /*
-    // Optionally, a storage backend using the Sled database is provided
-    use background_jobs::sled_storage::Storage;
-    use sled_extensions::Db;
-    let db = Db::open("my-sled-db")?;
-    let storage = Storage::new(db)?;
-    */
 
     // Start the application server. This guards access to to the jobs store
     let queue_handle = create_server(storage);

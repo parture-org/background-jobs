@@ -23,14 +23,6 @@ async fn main() -> Result<(), Error> {
     use background_jobs::memory_storage::Storage;
     let storage = Storage::new();
 
-    /*
-    // Optionally, a storage backend using the Sled database is provided
-    use background_jobs::sled_storage::Storage;
-    use sled_extensions::Db;
-    let db = Db::open("my-sled-db")?;
-    let storage = Storage::new(db)?;
-    */
-
     // Start the application server. This guards access to to the jobs store
     let queue_handle = create_server(storage);
 
