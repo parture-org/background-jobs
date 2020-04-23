@@ -2,13 +2,17 @@ use crate::{
     storage::{ActixStorage, StorageWrapper},
     worker::Worker,
 };
-use actix::clock::{interval_at, Duration, Instant};
+use actix_rt::{
+    spawn,
+    time::{interval_at, Instant},
+};
 use anyhow::Error;
 use background_jobs_core::{NewJobInfo, ReturnJobInfo, Stats, Storage};
 use log::{error, trace};
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
+    time::Duration,
 };
 use tokio::sync::Mutex;
 
@@ -39,7 +43,7 @@ impl Server {
         };
 
         let server2 = server.clone();
-        actix::spawn(async move {
+        spawn(async move {
             let mut interval = interval_at(Instant::now(), Duration::from_secs(1));
 
             loop {

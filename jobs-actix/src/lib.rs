@@ -12,7 +12,6 @@
 //!
 //! ### Example
 //! ```rust,ignore
-//! use actix::System;
 //! use anyhow::Error;
 //! use background_jobs::{create_server, Backoff, Job, MaxRetries, WorkerConfig};
 //! use futures::future::{ok, Ready};
@@ -117,7 +116,7 @@
 //! }
 //! ```
 
-use actix::Arbiter;
+use actix_rt::{spawn, Arbiter};
 use anyhow::Error;
 use background_jobs_core::{new_job, new_scheduled_job, Job, ProcessorMap, Stats, Storage};
 use chrono::{DateTime, Utc};
@@ -253,7 +252,7 @@ impl QueueHandle {
     {
         let job = new_job(job)?;
         let server = self.inner.clone();
-        actix::spawn(async move {
+        spawn(async move {
             if let Err(e) = server.new_job(job).await {
                 error!("Error creating job, {}", e);
             }
@@ -271,7 +270,7 @@ impl QueueHandle {
     {
         let job = new_scheduled_job(job, after)?;
         let server = self.inner.clone();
-        actix::spawn(async move {
+        spawn(async move {
             if let Err(e) = server.new_job(job).await {
                 error!("Error creating job, {}", e);
             }

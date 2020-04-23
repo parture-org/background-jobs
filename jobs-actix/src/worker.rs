@@ -1,4 +1,5 @@
 use crate::Server;
+use actix_rt::spawn;
 use background_jobs_core::{CachedProcessorMap, JobInfo};
 use log::{debug, error, warn};
 use tokio::sync::mpsc::{channel, Sender};
@@ -58,7 +59,7 @@ pub(crate) fn local_worker<State>(
         queue: queue.clone(),
     };
 
-    actix::spawn(async move {
+    spawn(async move {
         debug!("Beginning worker loop for {}", id);
         if let Err(e) = server.request_job(Box::new(handle.clone())).await {
             error!("Couldn't request first job, bailing, {}", e);
