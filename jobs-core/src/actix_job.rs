@@ -102,7 +102,7 @@ where
     fn run(self, state: Self::State) -> Self::Future {
         let (tx, rx) = oneshot::channel();
 
-        actix::spawn(async move {
+        actix_rt::spawn(async move {
             if let Err(_) = tx.send(ActixJob::run(self, state).await) {
                 error!("Job dropped");
             }
