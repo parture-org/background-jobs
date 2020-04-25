@@ -53,11 +53,7 @@ pub(crate) fn local_worker<State>(
 
     let (tx, mut rx) = channel(16);
 
-    let handle = LocalWorkerHandle {
-        tx: tx.clone(),
-        id,
-        queue: queue.clone(),
-    };
+    let handle = LocalWorkerHandle { tx, id, queue };
 
     spawn(async move {
         debug!("Beginning worker loop for {}", id);

@@ -110,8 +110,7 @@ impl Storage for SledStorage {
                     )
                     .filter_map(|id| job_tree.get(id).ok())
                     .filter_map(|opt| opt)
-                    .filter(|job| job.is_ready(now) && job.is_pending(now))
-                    .next();
+                    .find(|job| job.is_ready(now) && job.is_pending(now));
 
                 if let Some(ref job) = job {
                     queue_tree.remove(&job_key(job.id()))?;
@@ -170,10 +169,7 @@ impl Storage for SledStorage {
     async fn get_stats(&self) -> Result<Stats> {
         let this = self.clone();
 
-        Ok(
-            run(move || Ok(this.stats.get("stats")?.unwrap_or(Stats::default())) as Result<Stats>)
-                .await?,
-        )
+        Ok(run(move || Ok(this.stats.get("stats")?.unwrap_or_default()) as Result<Stats>).await?)
     }
 
     async fn update_stats<F>(&self, f: F) -> Result<()>

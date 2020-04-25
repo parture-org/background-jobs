@@ -16,9 +16,11 @@ use std::{
 };
 use tokio::sync::Mutex;
 
+type WorkerQueue = VecDeque<Box<dyn Worker + Send>>;
+
 #[derive(Clone)]
 pub(crate) struct ServerCache {
-    cache: Arc<Mutex<HashMap<String, VecDeque<Box<dyn Worker + Send>>>>>,
+    cache: Arc<Mutex<HashMap<String, WorkerQueue>>>,
 }
 
 /// The server Actor
@@ -144,7 +146,7 @@ impl ServerCache {
     async fn push(&self, queue: String, worker: Box<dyn Worker + Send>) {
         let mut cache = self.cache.lock().await;
 
-        let entry = cache.entry(queue).or_insert(VecDeque::new());
+        let entry = cache.entry(queue).or_insert_with(VecDeque::new);
         entry.push_back(worker);
     }
 

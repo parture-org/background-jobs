@@ -170,6 +170,12 @@ pub mod memory_storage {
         }
     }
 
+    impl Default for Storage {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     #[async_trait::async_trait]
     impl super::Storage for Storage {
         type Error = Infallible;
@@ -192,7 +198,7 @@ pub mod memory_storage {
         }
 
         async fn fetch_job(&self, id: Uuid) -> Result<Option<JobInfo>, Self::Error> {
-            let j = self.inner.lock().await.jobs.get(&id).map(|j| j.clone());
+            let j = self.inner.lock().await.jobs.get(&id).cloned();
 
             Ok(j)
         }

@@ -22,10 +22,9 @@ where
         loop {
             interval.tick().await;
 
-            match spawner.queue(job.clone()) {
-                Err(_) => error!("Failed to queue job"),
-                _ => (),
-            };
+            if spawner.queue(job.clone()).is_err() {
+                error!("Failed to queue job");
+            }
         }
     });
 }

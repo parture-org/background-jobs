@@ -103,7 +103,7 @@ where
         let (tx, rx) = oneshot::channel();
 
         actix_rt::spawn(async move {
-            if let Err(_) = tx.send(ActixJob::run(self, state).await) {
+            if tx.send(ActixJob::run(self, state).await).is_err() {
                 error!("Job dropped");
             }
         });

@@ -2,7 +2,7 @@ use anyhow::Error;
 use background_jobs::{create_server, Job, MaxRetries, WorkerConfig};
 use futures::future::{ok, Ready};
 
-const DEFAULT_QUEUE: &'static str = "default";
+const DEFAULT_QUEUE: &str = "default";
 
 #[derive(Clone, Debug)]
 pub struct MyState {
