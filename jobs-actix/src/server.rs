@@ -7,6 +7,7 @@ use actix_rt::{
     time::{interval_at, Instant},
 };
 use anyhow::Error;
+use async_mutex::Mutex;
 use background_jobs_core::{NewJobInfo, ReturnJobInfo, Stats, Storage};
 use log::{error, trace};
 use std::{
@@ -14,7 +15,6 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::Mutex;
 
 type WorkerQueue = VecDeque<Box<dyn Worker + Send>>;
 

@@ -135,8 +135,8 @@ pub trait Storage: Clone + Send {
 /// A default, in-memory implementation of a storage mechanism
 pub mod memory_storage {
     use super::{JobInfo, Stats};
+    use async_mutex::Mutex;
     use chrono::Utc;
-    use futures::lock::Mutex;
     use std::{collections::HashMap, convert::Infallible, sync::Arc};
     use uuid::Uuid;
 

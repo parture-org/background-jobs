@@ -1,7 +1,7 @@
 [package]
 name = "background-jobs-core"
 description = "Core types for implementing an asynchronous jobs processor"
-version = "0.8.0-alpha.2"
+version = "0.8.0-alpha.3"
 license-file = "../LICENSE"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/Aardwolf/background-jobs"
@@ -16,12 +16,15 @@ with-actix = ["actix-rt", "tokio"]
 [dependencies]
 actix-rt = { version = "1.1.0", optional = true }
 anyhow = "1.0"
+async-mutex = "1.0.1"
 async-trait = "0.1.24"
 chrono = { version = "0.4", features = ["serde"] }
-futures = "0.3.4"
 log = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
 tokio = { version = "0.2.13", optional = true }
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
+
+[dev-dependencies]
+futures = "0.3.4"
