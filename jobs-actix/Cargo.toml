@@ -1,7 +1,7 @@
 [package]
 name = "background-jobs-actix"
 description = "in-process jobs processor based on Actix"
-version = "0.8.0-alpha.3"
+version = "0.8.0"
 license-file = "../LICENSE"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/Aardwolf/background-jobs"
@@ -10,11 +10,11 @@ readme = "../README.md"
 edition = "2018"
 
 [dependencies]
-actix-rt = "1.1.0"
+actix-rt = "1.1.1"
 anyhow = "1.0"
 async-mutex = "1.0.1"
 async-trait = "0.1.24"
-background-jobs-core = { version = "0.8.0-alpha.3", path = "../jobs-core", features = ["with-actix"] }
+background-jobs-core = { version = "0.8.0", path = "../jobs-core", features = ["with-actix"] }
 chrono = "0.4"
 log = "0.4"
 num_cpus = "1.10.0"
@@ -22,5 +22,5 @@ rand = "0.7.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
-tokio = { version = "0.2.13", features = ["sync"] }
+tokio = { version = "0.2.22", default-features = false, features = ["sync"] }
 uuid = { version ="0.8.1", features = ["v4", "serde"] }
