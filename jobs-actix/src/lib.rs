@@ -116,7 +116,7 @@
 //! }
 //! ```
 
-use actix_rt::{spawn, Arbiter};
+use actix_rt::Arbiter;
 use anyhow::Error;
 use background_jobs_core::{new_job, new_scheduled_job, Job, ProcessorMap, Stats, Storage};
 use chrono::{DateTime, Utc};
@@ -138,13 +138,15 @@ pub use background_jobs_core::ActixJob;
 /// and guarded access to jobs via messages. Since we now have futures-aware synchronization
 /// primitives, the Server has become an object that gets shared between client threads.
 ///
-/// This method should only be called once.
+/// This method will panic if not called from an actix runtime
 pub fn create_server<S>(storage: S) -> QueueHandle
 where
     S: Storage + Sync + 'static,
 {
+    let arbiter = Arbiter::current();
     QueueHandle {
-        inner: Server::new(storage),
+        inner: Server::new(&arbiter, storage),
+        arbiter,
     }
 }
 
@@ -204,6 +206,8 @@ where
     }
 
     /// Start the workers in the current arbiter
+    ///
+    /// This method will panic if not called from an actix runtime
     pub fn start(self, queue_handle: QueueHandle) {
         for (key, count) in self.queues.into_iter() {
             for _ in 0..count {
@@ -239,6 +243,7 @@ where
 #[derive(Clone)]
 pub struct QueueHandle {
     inner: Server,
+    arbiter: Arbiter,
 }
 
 impl QueueHandle {
@@ -252,11 +257,11 @@ impl QueueHandle {
     {
         let job = new_job(job)?;
         let server = self.inner.clone();
-        spawn(async move {
+        self.arbiter.send(Box::pin(async move {
             if let Err(e) = server.new_job(job).await {
                 error!("Error creating job, {}", e);
             }
-        });
+        }));
         Ok(())
     }
 
@@ -270,11 +275,11 @@ impl QueueHandle {
     {
         let job = new_scheduled_job(job, after)?;
         let server = self.inner.clone();
-        spawn(async move {
+        self.arbiter.send(Box::pin(async move {
             if let Err(e) = server.new_job(job).await {
                 error!("Error creating job, {}", e);
             }
-        });
+        }));
         Ok(())
     }
 
@@ -284,9 +289,9 @@ impl QueueHandle {
     /// processed whenever workers are free to do so.
     pub fn every<J>(&self, duration: Duration, job: J)
     where
-        J: Job + Clone + 'static,
+        J: Job + Clone + Send + 'static,
     {
-        every(self.clone(), duration, job);
+        every(self, duration, job);
     }
 
     /// Return an overview of the processor's statistics

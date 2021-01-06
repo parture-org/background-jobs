@@ -3,8 +3,8 @@ use crate::{
     worker::Worker,
 };
 use actix_rt::{
-    spawn,
     time::{interval_at, Instant},
+    Arbiter,
 };
 use anyhow::Error;
 use async_mutex::Mutex;
@@ -16,7 +16,7 @@ use std::{
     time::Duration,
 };
 
-type WorkerQueue = VecDeque<Box<dyn Worker + Send>>;
+type WorkerQueue = VecDeque<Box<dyn Worker + Send + Sync>>;
 
 #[derive(Clone)]
 pub(crate) struct ServerCache {
@@ -35,7 +35,7 @@ pub(crate) struct Server {
 
 impl Server {
     /// Create a new Server from a compatible storage implementation
-    pub(crate) fn new<S>(storage: S) -> Self
+    pub(crate) fn new<S>(arbiter: &Arbiter, storage: S) -> Self
     where
         S: Storage + Sync + 'static,
     {
@@ -45,7 +45,7 @@ impl Server {
         };
 
         let server2 = server.clone();
-        spawn(async move {
+        arbiter.send(Box::pin(async move {
             let mut interval = interval_at(Instant::now(), Duration::from_secs(1));
 
             loop {
@@ -54,7 +54,7 @@ impl Server {
                     error!("Error while checking database for new jobs, {}", e);
                 }
             }
-        });
+        }));
 
         server2
     }
@@ -92,7 +92,7 @@ impl Server {
 
     pub(crate) async fn request_job(
         &self,
-        worker: Box<dyn Worker + Send + 'static>,
+        worker: Box<dyn Worker + Send + Sync + 'static>,
     ) -> Result<(), Error> {
         trace!("Worker {} requested job", worker.id());
 
@@ -104,7 +104,7 @@ impl Server {
     async fn try_turning(
         &self,
         queue: String,
-        worker: Box<dyn Worker + Send + 'static>,
+        worker: Box<dyn Worker + Send + Sync + 'static>,
     ) -> Result<bool, Error> {
         trace!("Trying to find job for worker {}", worker.id());
         if let Ok(Some(job)) = self.storage.request_job(&queue, worker.id()).await {
@@ -143,14 +143,14 @@ impl ServerCache {
         cache.keys().cloned().collect()
     }
 
-    async fn push(&self, queue: String, worker: Box<dyn Worker + Send>) {
+    async fn push(&self, queue: String, worker: Box<dyn Worker + Send + Sync>) {
         let mut cache = self.cache.lock().await;
 
         let entry = cache.entry(queue).or_insert_with(VecDeque::new);
         entry.push_back(worker);
     }
 
-    async fn pop(&self, queue: String) -> Option<Box<dyn Worker + Send>> {
+    async fn pop(&self, queue: String) -> Option<Box<dyn Worker + Send + Sync>> {
         let mut cache = self.cache.lock().await;
 
         let mut vec_deque = cache.remove(&queue)?;
