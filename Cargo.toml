@@ -1,7 +1,7 @@
 [package]
 name = "background-jobs"
 description = "Background Jobs implemented with actix and futures"
-version = "0.8.0"
+version = "0.9.0"
 license-file = "LICENSE"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/Aardwolf/background-jobs"
@@ -21,10 +21,10 @@ members = [
 default = ["background-jobs-actix"]
 
 [dependencies.background-jobs-core]
-version = "0.8.0"
+version = "0.9.0"
 path = "jobs-core"
 
 [dependencies.background-jobs-actix]
-version = "0.8.0"
+version = "0.9.0"
 path = "jobs-actix"
 optional = true

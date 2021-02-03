@@ -14,7 +14,7 @@ where
     J: Job + Clone + Send,
 {
     let spawner_clone = spawner.clone();
-    spawner.arbiter.send(Box::pin(async move {
+    spawner.arbiter.spawn(async move {
         let mut interval = interval_at(Instant::now(), duration);
 
         loop {
@@ -24,5 +24,5 @@ where
                 error!("Failed to queue job");
             }
         }
-    }));
+    });
 }

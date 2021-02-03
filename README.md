@@ -13,10 +13,10 @@ might not be the best experience.
 #### Add Background Jobs to your project
 ```toml
 [dependencies]
-actix = "0.10.0-alpha.0"
-background-jobs = "0.8.0-alpha.1"
+actix-rt = "2.0.0"
+background-jobs = "0.9.0"
 anyhow = "1.0"
-futures = "0.3.4"
+futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 ```
 

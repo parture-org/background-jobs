@@ -4,7 +4,7 @@ use crate::{
 };
 use actix_rt::{
     time::{interval_at, Instant},
-    Arbiter,
+    ArbiterHandle,
 };
 use anyhow::Error;
 use async_mutex::Mutex;
@@ -35,7 +35,7 @@ pub(crate) struct Server {
 
 impl Server {
     /// Create a new Server from a compatible storage implementation
-    pub(crate) fn new<S>(arbiter: &Arbiter, storage: S) -> Self
+    pub(crate) fn new<S>(arbiter: &ArbiterHandle, storage: S) -> Self
     where
         S: Storage + Sync + 'static,
     {
@@ -45,7 +45,7 @@ impl Server {
         };
 
         let server2 = server.clone();
-        arbiter.send(Box::pin(async move {
+        arbiter.spawn(async move {
             let mut interval = interval_at(Instant::now(), Duration::from_secs(1));
 
             loop {
@@ -54,7 +54,7 @@ impl Server {
                     error!("Error while checking database for new jobs, {}", e);
                 }
             }
-        }));
+        });
 
         server2
     }

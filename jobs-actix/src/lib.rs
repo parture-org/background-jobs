@@ -116,7 +116,7 @@
 //! }
 //! ```
 
-use actix_rt::Arbiter;
+use actix_rt::{Arbiter, ArbiterHandle};
 use anyhow::Error;
 use background_jobs_core::{new_job, new_scheduled_job, Job, ProcessorMap, Stats, Storage};
 use chrono::{DateTime, Utc};
@@ -228,7 +228,7 @@ where
                 let processors = self.processors.clone();
                 let server = queue_handle.inner.clone();
 
-                arbiter.exec_fn(move || {
+                arbiter.spawn_fn(move || {
                     local_worker(key, processors.cached(), server);
                 });
             }
@@ -243,7 +243,7 @@ where
 #[derive(Clone)]
 pub struct QueueHandle {
     inner: Server,
-    arbiter: Arbiter,
+    arbiter: ArbiterHandle,
 }
 
 impl QueueHandle {
@@ -257,11 +257,11 @@ impl QueueHandle {
     {
         let job = new_job(job)?;
         let server = self.inner.clone();
-        self.arbiter.send(Box::pin(async move {
+        self.arbiter.spawn(async move {
             if let Err(e) = server.new_job(job).await {
                 error!("Error creating job, {}", e);
             }
-        }));
+        });
         Ok(())
     }
 
@@ -275,11 +275,11 @@ impl QueueHandle {
     {
         let job = new_scheduled_job(job, after)?;
         let server = self.inner.clone();
-        self.arbiter.send(Box::pin(async move {
+        self.arbiter.spawn(async move {
             if let Err(e) = server.new_job(job).await {
                 error!("Error creating job, {}", e);
             }
-        }));
+        });
         Ok(())
     }
 
