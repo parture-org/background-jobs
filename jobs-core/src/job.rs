@@ -17,8 +17,8 @@ use std::{future::Future, pin::Pin};
 /// ```rust
 /// use anyhow::Error;
 /// use background_jobs_core::{Job, new_job};
-/// use futures::future::{ok, Ready};
 /// use log::info;
+/// use std::future::{ready, Ready};
 ///
 /// #[derive(serde::Deserialize, serde::Serialize)]
 /// struct MyJob {
@@ -34,7 +34,7 @@ use std::{future::Future, pin::Pin};
 ///     fn run(self, _: Self::State) -> Self::Future {
 ///         info!("Processing {}", self.count);
 ///
-///         ok(())
+///         ready(Ok(()))
 ///     }
 /// }
 ///
