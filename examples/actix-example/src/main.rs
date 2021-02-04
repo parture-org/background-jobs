@@ -1,6 +1,8 @@
 use anyhow::Error;
 use background_jobs::{create_server, Job, MaxRetries, WorkerConfig};
-use futures::future::{ok, Ready};
+use background_jobs_sled_storage::Storage;
+use chrono::{Duration, Utc};
+use std::future::{ready, Ready};
 
 const DEFAULT_QUEUE: &str = "default";
 
@@ -19,9 +21,8 @@ pub struct MyJob {
 async fn main() -> Result<(), Error> {
     env_logger::init();
     // Set up our Storage
-    // For this example, we use the default in-memory storage mechanism
-    use background_jobs::memory_storage::Storage;
-    let storage = Storage::new();
+    let db = sled::Config::new().temporary(true).open()?;
+    let storage = Storage::new(db)?;
 
     // Start the application server. This guards access to to the jobs store
     let queue_handle = create_server(storage);
@@ -36,6 +37,7 @@ async fn main() -> Result<(), Error> {
     queue_handle.queue(MyJob::new(1, 2))?;
     queue_handle.queue(MyJob::new(3, 4))?;
     queue_handle.queue(MyJob::new(5, 6))?;
+    queue_handle.schedule(MyJob::new(7, 8), Utc::now() + Duration::seconds(2))?;
 
     // Block on Actix
     actix_rt::signal::ctrl_c().await?;
@@ -85,6 +87,6 @@ impl Job for MyJob {
     fn run(self, state: MyState) -> Self::Future {
         println!("{}: args, {:?}", state.app_name, self);
 
-        ok(())
+        ready(Ok(()))
     }
 }
