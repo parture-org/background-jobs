@@ -1,7 +1,7 @@
 [package]
 name = "background-jobs-sled-storage"
 description = "Sled storage backend for background-jobs"
-version = "0.8.0-alpha.0"
+version = "0.9.0"
 license-file = "../LICENSE"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/Aardwolf/background-jobs"
@@ -11,10 +11,13 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix-threadpool = "0.3.1"
+actix-rt = "2.0.0"
 async-trait = "0.1.24"
 background-jobs-core = { version = "0.9.0", path = "../jobs-core" }
+bincode = "1.2"
 chrono = "0.4"
-sled-extensions = { version = "0.3.0-alpha.0", features = ["bincode", "cbor"], git = "https://git.asonix.dog/Aardwolf/sled-extensions" }
+sled = "0.34"
+serde_cbor = "0.11"
 thiserror = "1.0"
+tokio = { version = "1", default-features = false, features = ["rt"] }
 uuid = { version = "0.8.1", features = ["v4", "serde"] }
