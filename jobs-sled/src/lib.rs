@@ -13,11 +13,10 @@
 //! let queue_handle = ServerConfig::new(storage).thread_count(8).start();
 //! ```
 
-use actix_rt::task::spawn_blocking;
+use actix_rt::task::{spawn_blocking, JoinError};
 use background_jobs_core::{JobInfo, Stats};
 use chrono::offset::Utc;
 use sled::{Db, Tree};
-use tokio::task::JoinError;
 use uuid::Uuid;
 
 /// The error produced by sled storage calls
