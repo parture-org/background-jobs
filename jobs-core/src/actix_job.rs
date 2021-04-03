@@ -98,6 +98,10 @@ where
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
 
     const NAME: &'static str = <Self as ActixJob>::NAME;
+    const QUEUE: &'static str = <Self as ActixJob>::QUEUE;
+    const MAX_RETRIES: MaxRetries = <Self as ActixJob>::MAX_RETRIES;
+    const BACKOFF: Backoff = <Self as ActixJob>::BACKOFF;
+    const TIMEOUT: i64 = <Self as ActixJob>::TIMEOUT;
 
     fn run(self, state: Self::State) -> Self::Future {
         let (tx, rx) = oneshot::channel();
