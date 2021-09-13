@@ -1,6 +1,6 @@
 use chrono::{offset::Utc, DateTime, Datelike, Timelike};
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 /// Statistics about the jobs processor
 pub struct Stats {
     /// How many jobs are pending execution
@@ -57,17 +57,6 @@ impl Stats {
         }
         self.complete.increment();
         self
-    }
-}
-
-impl Default for Stats {
-    fn default() -> Self {
-        Stats {
-            pending: 0,
-            running: 0,
-            dead: JobStat::default(),
-            complete: JobStat::default(),
-        }
     }
 }
 

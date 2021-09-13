@@ -17,8 +17,14 @@ pub struct MyJob {
     other_usize: usize,
 }
 
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct PanickingJob;
+
 #[actix_rt::main]
 async fn main() -> Result<(), Error> {
+    if std::env::var_os("RUST_LOG").is_none() {
+        std::env::set_var("RUST_LOG", "info");
+    }
     env_logger::init();
     // Set up our Storage
     let db = sled::Config::new().temporary(true).open()?;
@@ -29,9 +35,15 @@ async fn main() -> Result<(), Error> {
 
     // Configure and start our workers
     WorkerConfig::new(move || MyState::new("My App"))
+        .register::<PanickingJob>()
         .register::<MyJob>()
         .set_worker_count(DEFAULT_QUEUE, 16)
         .start(queue_handle.clone());
+
+    // Queue some panicking job
+    for _ in 0..32 {
+        queue_handle.queue(PanickingJob)?;
+    }
 
     // Queue our jobs
     queue_handle.queue(MyJob::new(1, 2))?;
@@ -88,5 +100,21 @@ impl Job for MyJob {
         println!("{}: args, {:?}", state.app_name, self);
 
         ready(Ok(()))
+    }
+}
+
+#[async_trait::async_trait]
+impl Job for PanickingJob {
+    type State = MyState;
+    type Future = Ready<Result<(), Error>>;
+
+    const NAME: &'static str = "PanickingJob";
+
+    const QUEUE: &'static str = DEFAULT_QUEUE;
+
+    const MAX_RETRIES: MaxRetries = MaxRetries::Count(0);
+
+    fn run(self, _: MyState) -> Self::Future {
+        panic!("A panicking job does not stop others from running")
     }
 }
