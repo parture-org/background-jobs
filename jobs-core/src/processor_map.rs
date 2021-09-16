@@ -1,8 +1,10 @@
-use crate::{Job, JobError, JobInfo, ReturnJobInfo};
+use crate::{catch_unwind::catch_unwind, Job, JobError, JobInfo, ReturnJobInfo};
 use chrono::Utc;
-use log::{error, info};
 use serde_json::Value;
 use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
+use tracing::{error, Span};
+use tracing_futures::Instrument;
+use uuid::Uuid;
 
 /// A generic function that processes a job
 ///
@@ -76,17 +78,32 @@ where
     /// This should not be called from outside implementations of a backgoround-jobs runtime. It is
     /// intended for internal use.
     pub async fn process(&self, job: JobInfo) -> ReturnJobInfo {
-        let opt = self
-            .inner
-            .get(job.name())
-            .map(|name| process(Arc::clone(name), (self.state_fn)(), job.clone()));
+        let span = job_span(&job);
+        let opt = self.inner.get(job.name()).map(|name| {
+            let entered = span.enter();
+            let fut = process(Arc::clone(name), (self.state_fn)(), job.clone());
+            drop(entered);
+            fut
+        });
 
-        if let Some(fut) = opt {
-            fut.await
+        let res = if let Some(fut) = opt {
+            fut.instrument(span.clone()).await
         } else {
-            error!("Job {} not registered", job.name());
+            span.record(
+                "exception.message",
+                &tracing::field::display("Not registered"),
+            );
+            span.record(
+                "exception.details",
+                &tracing::field::display("Not registered"),
+            );
+            let entered = span.enter();
+            error!("Not registered");
+            drop(entered);
             ReturnJobInfo::unregistered(job.id())
-        }
+        };
+
+        res
     }
 }
 
@@ -99,51 +116,44 @@ where
     /// This should not be called from outside implementations of a backgoround-jobs runtime. It is
     /// intended for internal use.
     pub async fn process(&self, job: JobInfo) -> ReturnJobInfo {
-        if let Some(name) = self.inner.get(job.name()) {
-            process(Arc::clone(name), self.state.clone(), job).await
+        let span = job_span(&job);
+
+        let res = if let Some(name) = self.inner.get(job.name()) {
+            let entered = span.enter();
+            let fut = process(Arc::clone(name), self.state.clone(), job);
+            drop(entered);
+
+            fut.instrument(span.clone()).await
         } else {
-            error!("Job {} not registered", job.name());
+            let entered = span.enter();
+            span.record(
+                "exception.message",
+                &tracing::field::display("Not registered"),
+            );
+            span.record(
+                "exception.details",
+                &tracing::field::display("Not registered"),
+            );
+            error!("Not registered");
+            drop(entered);
             ReturnJobInfo::unregistered(job.id())
-        }
+        };
+
+        res
     }
 }
 
-struct CatchUnwindFuture<F> {
-    future: std::sync::Mutex<F>,
-}
-
-fn catch_unwind<F>(future: F) -> CatchUnwindFuture<F>
-where
-    F: Future + Unpin,
-{
-    CatchUnwindFuture {
-        future: std::sync::Mutex::new(future),
-    }
-}
-
-impl<F> std::future::Future for CatchUnwindFuture<F>
-where
-    F: Future + Unpin,
-{
-    type Output = std::thread::Result<F::Output>;
-
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        let future = &self.future;
-        let waker = cx.waker().clone();
-        let res = std::panic::catch_unwind(|| {
-            let mut context = std::task::Context::from_waker(&waker);
-            let mut guard = future.lock().unwrap();
-            Pin::new(&mut *guard).poll(&mut context)
-        });
-
-        match res {
-            Ok(poll) => poll.map(Ok),
-            Err(e) => std::task::Poll::Ready(Err(e)),
-        }
-    }
+fn job_span(job: &JobInfo) -> Span {
+    tracing::info_span!(
+        "Job",
+        execution_id = tracing::field::display(&Uuid::new_v4()),
+        job.id = tracing::field::display(&job.id()),
+        job.name = tracing::field::display(&job.name()),
+        job.args = tracing::field::debug(&job.args()),
+        job.execution_time = tracing::field::Empty,
+        exception.message = tracing::field::Empty,
+        exception.details = tracing::field::Empty,
+    )
 }
 
 async fn process<S>(process_fn: ProcessFn<S>, state: S, job: JobInfo) -> ReturnJobInfo
@@ -152,7 +162,6 @@ where
 {
     let args = job.args();
     let id = job.id();
-    let name = job.name().to_owned();
 
     let start = Utc::now();
 
@@ -176,17 +185,36 @@ where
         0_f64
     };
 
+    let span = Span::current();
+    span.record("job.execution_time", &tracing::field::display(&seconds));
+
     match res {
         Ok(Ok(_)) => {
-            info!("Job {} {} completed {:.6}", id, name, seconds);
+            #[cfg(feature = "completion-logging")]
+            tracing::info!("Job completed");
+
             ReturnJobInfo::pass(id)
         }
         Ok(Err(e)) => {
-            info!("Job {} {} errored {} {:.6}", id, name, e, seconds);
+            let display = format!("{}", e);
+            let debug = format!("{:?}", e);
+            span.record("exception.message", &tracing::field::display(&display));
+            span.record("exception.details", &tracing::field::display(&debug));
+            #[cfg(feature = "error-logging")]
+            tracing::warn!("Job errored: {:?}", e);
             ReturnJobInfo::fail(id)
         }
         Err(_) => {
-            info!("Job {} {} panicked {:.6}", id, name, seconds);
+            span.record(
+                "exception.message",
+                &tracing::field::display("Job panicked"),
+            );
+            span.record(
+                "exception.details",
+                &tracing::field::display("Job panicked"),
+            );
+            #[cfg(feature = "error-logging")]
+            tracing::warn!("Job panicked");
             ReturnJobInfo::fail(id)
         }
     }

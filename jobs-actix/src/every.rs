@@ -1,7 +1,7 @@
 use crate::{Job, QueueHandle};
 use actix_rt::time::{interval_at, Instant};
-use log::error;
 use std::time::Duration;
+use tracing::error;
 
 /// A type used to schedule recurring jobs.
 ///

@@ -1,8 +1,10 @@
 use anyhow::Error;
-use background_jobs::{create_server, Job, MaxRetries, WorkerConfig};
+use background_jobs::{create_server, ActixJob as Job, MaxRetries, WorkerConfig};
 use background_jobs_sled_storage::Storage;
 use chrono::{Duration, Utc};
 use std::future::{ready, Ready};
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 const DEFAULT_QUEUE: &str = "default";
 
@@ -22,10 +24,12 @@ pub struct PanickingJob;
 
 #[actix_rt::main]
 async fn main() -> Result<(), Error> {
-    if std::env::var_os("RUST_LOG").is_none() {
-        std::env::set_var("RUST_LOG", "info");
-    }
-    env_logger::init();
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    tracing_subscriber::fmt::fmt()
+        .with_env_filter(env_filter)
+        .init();
+
     // Set up our Storage
     let db = sled::Config::new().temporary(true).open()?;
     let storage = Storage::new(db)?;
@@ -97,7 +101,7 @@ impl Job for MyJob {
     const MAX_RETRIES: MaxRetries = MaxRetries::Count(1);
 
     fn run(self, state: MyState) -> Self::Future {
-        println!("{}: args, {:?}", state.app_name, self);
+        info!("{}: args, {:?}", state.app_name, self);
 
         ready(Ok(()))
     }

@@ -9,12 +9,12 @@ use actix_rt::{
 use anyhow::Error;
 use async_mutex::Mutex;
 use background_jobs_core::{NewJobInfo, ReturnJobInfo, Stats, Storage};
-use log::{error, trace};
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
     time::Duration,
 };
+use tracing::{error, trace};
 
 type WorkerQueue = VecDeque<Box<dyn Worker + Send + Sync>>;
 

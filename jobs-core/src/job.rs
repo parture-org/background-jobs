@@ -17,7 +17,7 @@ use std::{future::Future, pin::Pin};
 /// ```rust
 /// use anyhow::Error;
 /// use background_jobs_core::{Job, new_job};
-/// use log::info;
+/// use tracing::info;
 /// use std::future::{ready, Ready};
 ///
 /// #[derive(serde::Deserialize, serde::Serialize)]

@@ -1,7 +1,7 @@
 use crate::{Backoff, JobResult, JobStatus, MaxRetries, ShouldStop};
 use chrono::{offset::Utc, DateTime, Duration};
-use log::trace;
 use serde_json::Value;
+use tracing::trace;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]

@@ -1,7 +1,7 @@
 use crate::{JobInfo, NewJobInfo, ReturnJobInfo, Stats};
 use chrono::offset::Utc;
-use log::info;
 use std::error::Error;
+use tracing::info;
 use uuid::Uuid;
 
 /// Define a storage backend for jobs
@@ -109,7 +109,9 @@ pub trait Storage: Clone + Send {
                     self.save_job(job).await?;
                     self.update_stats(Stats::retry_job).await
                 } else {
-                    info!("Job {} failed permanently", id);
+                    #[cfg(feature = "error-logging")]
+                    tracing::warn!("Job {} failed permanently", id);
+
                     self.delete_job(id).await?;
                     self.update_stats(Stats::fail_job).await
                 }

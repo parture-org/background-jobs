@@ -125,7 +125,7 @@ impl background_jobs_core::Storage for Storage {
                         }
                     })
                     .filter_map(|id| this.jobinfo.get(id).ok())
-                    .filter_map(|opt| opt)
+                    .flatten()
                     .filter_map(|ivec| serde_cbor::from_slice(&ivec).ok())
                     .find(|job: &JobInfo| job.is_ready(now) && job.is_pending(now));
 
@@ -216,7 +216,7 @@ impl background_jobs_core::Storage for Storage {
         Ok(spawn_blocking(move || {
             this.stats.fetch_and_update("stats", move |opt| {
                 let stats = if let Some(stats_ivec) = opt {
-                    bincode::deserialize(&stats_ivec).unwrap_or_default()
+                    bincode::deserialize(stats_ivec).unwrap_or_default()
                 } else {
                     Stats::default()
                 };

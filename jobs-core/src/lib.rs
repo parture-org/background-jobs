@@ -10,6 +10,7 @@ use anyhow::Error;
 
 #[cfg(feature = "with-actix")]
 mod actix_job;
+mod catch_unwind;
 mod job;
 mod job_info;
 mod processor_map;

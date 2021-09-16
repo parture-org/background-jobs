@@ -1,9 +1,10 @@
 use crate::{Backoff, Job, MaxRetries};
 use anyhow::Error;
-use log::error;
 use serde::{de::DeserializeOwned, ser::Serialize};
 use std::{future::Future, pin::Pin};
 use tokio::sync::oneshot;
+use tracing::{error, Span};
+use tracing_futures::Instrument;
 
 /// The ActixJob trait defines parameters pertaining to an instance of background job
 ///
@@ -92,7 +93,7 @@ pub trait ActixJob: Serialize + DeserializeOwned + 'static {
 
 impl<T> Job for T
 where
-    T: ActixJob,
+    T: ActixJob + std::panic::UnwindSafe,
 {
     type State = T::State;
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
@@ -106,13 +107,25 @@ where
     fn run(self, state: Self::State) -> Self::Future {
         let (tx, rx) = oneshot::channel();
 
-        actix_rt::spawn(async move {
-            if tx.send(ActixJob::run(self, state).await).is_err() {
+        let span = Span::current();
+        let handle = actix_rt::spawn(async move {
+            let entered = span.enter();
+            let fut = ActixJob::run(self, state);
+            drop(entered);
+
+            let result = fut.instrument(span.clone()).await;
+
+            if tx.send(result).is_err() {
+                let entered = span.enter();
                 error!("Job dropped");
+                drop(entered);
             }
         });
 
-        Box::pin(async move { rx.await? })
+        Box::pin(async move {
+            handle.await.unwrap();
+            rx.await?
+        })
     }
 
     fn queue(&self) -> &str {

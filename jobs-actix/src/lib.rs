@@ -120,8 +120,8 @@ use actix_rt::{Arbiter, ArbiterHandle};
 use anyhow::Error;
 use background_jobs_core::{new_job, new_scheduled_job, Job, ProcessorMap, Stats, Storage};
 use chrono::{DateTime, Utc};
-use log::error;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use tracing::error;
 
 mod every;
 mod server;
