@@ -79,31 +79,33 @@ where
     /// intended for internal use.
     pub async fn process(&self, job: JobInfo) -> ReturnJobInfo {
         let span = job_span(&job);
-        let opt = self.inner.get(job.name()).map(|name| {
-            let entered = span.enter();
-            let fut = process(Arc::clone(name), (self.state_fn)(), job.clone());
-            drop(entered);
-            fut
-        });
 
-        let res = if let Some(fut) = opt {
-            fut.instrument(span.clone()).await
-        } else {
-            span.record(
-                "exception.message",
-                &tracing::field::display("Not registered"),
-            );
-            span.record(
-                "exception.details",
-                &tracing::field::display("Not registered"),
-            );
-            let entered = span.enter();
-            error!("Not registered");
-            drop(entered);
-            ReturnJobInfo::unregistered(job.id())
+        let fut = async move {
+            let opt = self
+                .inner
+                .get(job.name())
+                .map(|name| process(Arc::clone(name), (self.state_fn)(), job.clone()));
+
+            let res = if let Some(fut) = opt {
+                fut.await
+            } else {
+                let span = Span::current();
+                span.record(
+                    "exception.message",
+                    &tracing::field::display("Not registered"),
+                );
+                span.record(
+                    "exception.details",
+                    &tracing::field::display("Not registered"),
+                );
+                error!("Not registered");
+                ReturnJobInfo::unregistered(job.id())
+            };
+
+            res
         };
 
-        res
+        fut.instrument(span).await
     }
 }
 
@@ -118,28 +120,27 @@ where
     pub async fn process(&self, job: JobInfo) -> ReturnJobInfo {
         let span = job_span(&job);
 
-        let res = if let Some(name) = self.inner.get(job.name()) {
-            let entered = span.enter();
-            let fut = process(Arc::clone(name), self.state.clone(), job);
-            drop(entered);
+        let fut = async move {
+            let res = if let Some(name) = self.inner.get(job.name()) {
+                process(Arc::clone(name), self.state.clone(), job).await
+            } else {
+                let span = Span::current();
+                span.record(
+                    "exception.message",
+                    &tracing::field::display("Not registered"),
+                );
+                span.record(
+                    "exception.details",
+                    &tracing::field::display("Not registered"),
+                );
+                error!("Not registered");
+                ReturnJobInfo::unregistered(job.id())
+            };
 
-            fut.instrument(span.clone()).await
-        } else {
-            let entered = span.enter();
-            span.record(
-                "exception.message",
-                &tracing::field::display("Not registered"),
-            );
-            span.record(
-                "exception.details",
-                &tracing::field::display("Not registered"),
-            );
-            error!("Not registered");
-            drop(entered);
-            ReturnJobInfo::unregistered(job.id())
+            res
         };
 
-        res
+        fut.instrument(span).await
     }
 }
 

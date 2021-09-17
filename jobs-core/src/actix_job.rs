@@ -107,20 +107,17 @@ where
     fn run(self, state: Self::State) -> Self::Future {
         let (tx, rx) = oneshot::channel();
 
-        let span = Span::current();
-        let handle = actix_rt::spawn(async move {
-            let entered = span.enter();
-            let fut = ActixJob::run(self, state);
-            drop(entered);
+        let fut = ActixJob::run(self, state);
+        let handle = actix_rt::spawn(
+            async move {
+                let result = fut.await;
 
-            let result = fut.instrument(span.clone()).await;
-
-            if tx.send(result).is_err() {
-                let entered = span.enter();
-                error!("Job dropped");
-                drop(entered);
+                if tx.send(result).is_err() {
+                    error!("Job dropped");
+                }
             }
-        });
+            .instrument(Span::current()),
+        );
 
         Box::pin(async move {
             handle.await.unwrap();

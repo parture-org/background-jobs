@@ -53,7 +53,6 @@ pub(crate) fn local_worker<State>(
     let id = Uuid::new_v4();
 
     let span = tracing::info_span!(
-        parent: None,
         "Worker",
         worker.id = tracing::field::display(&id),
         worker.queue = tracing::field::display(&queue),

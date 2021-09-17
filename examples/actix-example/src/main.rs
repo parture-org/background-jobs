@@ -119,6 +119,6 @@ impl Job for PanickingJob {
     const MAX_RETRIES: MaxRetries = MaxRetries::Count(0);
 
     fn run(self, _: MyState) -> Self::Future {
-        panic!("A panicking job does not stop others from running")
+        panic!("boom")
     }
 }
