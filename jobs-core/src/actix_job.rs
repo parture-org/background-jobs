@@ -63,6 +63,11 @@ pub trait ActixJob: Serialize + DeserializeOwned + 'static {
     /// an actor in an actix-based system.
     fn run(self, state: Self::State) -> Self::Future;
 
+    /// Generate a Span that the job will be processed within
+    fn span(&self) -> Option<Span> {
+        None
+    }
+
     /// If this job should not use it's default queue, this can be overridden in
     /// user-code.
     fn queue(&self) -> &str {
@@ -123,6 +128,10 @@ where
             handle.await.unwrap();
             rx.await?
         })
+    }
+
+    fn span(&self) -> Option<Span> {
+        ActixJob::span(self)
     }
 
     fn queue(&self) -> &str {
