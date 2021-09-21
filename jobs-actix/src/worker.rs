@@ -2,7 +2,7 @@ use crate::Server;
 use actix_rt::spawn;
 use background_jobs_core::{CachedProcessorMap, JobInfo};
 use tokio::sync::mpsc::{channel, Sender};
-use tracing::{debug, error, info, warn, Span};
+use tracing::{error, info, warn, Span};
 use tracing_futures::Instrument;
 use uuid::Uuid;
 
@@ -20,6 +20,20 @@ pub(crate) struct LocalWorkerHandle {
     tx: Sender<JobInfo>,
     id: Uuid,
     queue: String,
+}
+
+impl LocalWorkerHandle {
+    fn span(&self, operation: &str) -> Span {
+        tracing::info_span!(
+            "Worker",
+            worker.id = tracing::field::display(&self.id),
+            worker.queue = tracing::field::display(&self.queue),
+            worker.operation.id = tracing::field::display(&Uuid::new_v4()),
+            worker.operation.name = tracing::field::display(operation),
+            exception.message = tracing::field::Empty,
+            exception.details = tracing::field::Empty,
+        )
+    }
 }
 
 #[async_trait::async_trait]
@@ -50,50 +64,48 @@ pub(crate) fn local_worker<State>(
 ) where
     State: Clone + 'static,
 {
-    let id = Uuid::new_v4();
+    spawn(async move {
+        let id = Uuid::new_v4();
+        let (tx, mut rx) = channel(16);
 
-    let span = tracing::info_span!(
-        "Worker",
-        worker.id = tracing::field::display(&id),
-        worker.queue = tracing::field::display(&queue),
-        exception.message = tracing::field::Empty,
-        exception.details = tracing::field::Empty,
-    );
+        let handle = LocalWorkerHandle { tx, id, queue };
 
-    spawn(
-        async move {
-            let (tx, mut rx) = channel(16);
-
-            let handle = LocalWorkerHandle { tx, id, queue };
-
-            let span = Span::current();
-
-            debug!("Beginning worker loop for {}", id);
-            if let Err(e) = server.request_job(Box::new(handle.clone())).await {
+        loop {
+            let span = handle.span("request");
+            if let Err(e) = server
+                .request_job(Box::new(handle.clone()))
+                .instrument(span.clone())
+                .await
+            {
                 let display = format!("{}", e);
                 let debug = format!("{:?}", e);
                 span.record("exception.message", &tracing::field::display(&display));
                 span.record("exception.details", &tracing::field::display(&debug));
-                error!("Failed to notify server of new worker, {}", e);
-                return;
+                span.in_scope(|| error!("Failed to notify server of ready worker, {}", e));
+                break;
             }
-            while let Some(job) = rx.recv().await {
-                let return_job = processors.process(job).await;
+            drop(span);
 
-                if let Err(e) = server.return_job(return_job).await {
-                    warn!("Failed to return completed job, {}", e);
-                }
-                if let Err(e) = server.request_job(Box::new(handle.clone())).await {
+            if let Some(job) = rx.recv().await {
+                let return_job = processors
+                    .process(job)
+                    .instrument(handle.span("process"))
+                    .await;
+
+                let span = handle.span("return");
+                if let Err(e) = server.return_job(return_job).instrument(span.clone()).await {
                     let display = format!("{}", e);
                     let debug = format!("{:?}", e);
                     span.record("exception.message", &tracing::field::display(&display));
                     span.record("exception.details", &tracing::field::display(&debug));
-                    error!("Failed to notify server of ready worker, {}", e);
-                    break;
+                    span.in_scope(|| warn!("Failed to return completed job, {}", e));
                 }
+
+                continue;
             }
-            info!("Worker closing");
+
+            break;
         }
-        .instrument(span),
-    );
+        handle.span("closing").in_scope(|| info!("Worker closing"));
+    });
 }
