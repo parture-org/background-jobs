@@ -2,9 +2,9 @@
 name = "background-jobs-core"
 description = "Core types for implementing an asynchronous jobs processor"
 version = "0.10.0"
-license-file = "../LICENSE"
+license = "AGPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
-repository = "https://git.asonix.dog/Aardwolf/background-jobs"
+repository = "https://git.asonix.dog/asonix/background-jobs"
 keywords = ["jobs", "processor"]
 readme = "../README.md"
 edition = "2018"

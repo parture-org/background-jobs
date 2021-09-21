@@ -2,7 +2,7 @@
 name = "background-jobs-sled-storage"
 description = "Sled storage backend for background-jobs"
 version = "0.10.0"
-license-file = "../LICENSE"
+license = "AGPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/Aardwolf/background-jobs"
 readme = "../README.md"
