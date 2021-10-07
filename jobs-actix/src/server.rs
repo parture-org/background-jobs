@@ -109,7 +109,7 @@ impl Server {
         trace!("Trying to find job for worker {}", worker.id());
         if let Ok(Some(job)) = self.storage.request_job(&queue, worker.id()).await {
             if let Err(job) = worker.process(job).await {
-                error!("Worker has hung up");
+                error!("Worker {} has hung up", worker.id());
                 self.storage.return_job(job.unexecuted()).await?
             }
         } else {

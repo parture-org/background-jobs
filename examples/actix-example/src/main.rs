@@ -46,14 +46,16 @@ async fn main() -> Result<(), Error> {
 
     // Queue some panicking job
     for _ in 0..32 {
-        queue_handle.queue(PanickingJob)?;
+        queue_handle.queue(PanickingJob).await?;
     }
 
     // Queue our jobs
-    queue_handle.queue(MyJob::new(1, 2))?;
-    queue_handle.queue(MyJob::new(3, 4))?;
-    queue_handle.queue(MyJob::new(5, 6))?;
-    queue_handle.schedule(MyJob::new(7, 8), Utc::now() + Duration::seconds(2))?;
+    queue_handle.queue(MyJob::new(1, 2)).await?;
+    queue_handle.queue(MyJob::new(3, 4)).await?;
+    queue_handle.queue(MyJob::new(5, 6)).await?;
+    queue_handle
+        .schedule(MyJob::new(7, 8), Utc::now() + Duration::seconds(2))
+        .await?;
 
     // Block on Actix
     actix_rt::signal::ctrl_c().await?;

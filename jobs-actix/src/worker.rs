@@ -1,5 +1,4 @@
 use crate::Server;
-use actix_rt::spawn;
 use background_jobs_core::{CachedProcessorMap, JobInfo};
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, warn, Span};
@@ -57,55 +56,54 @@ impl Worker for LocalWorkerHandle {
     }
 }
 
-pub(crate) fn local_worker<State>(
+pub(crate) async fn local_worker<State>(
     queue: String,
     processors: CachedProcessorMap<State>,
     server: Server,
 ) where
     State: Clone + 'static,
 {
-    spawn(async move {
-        let id = Uuid::new_v4();
-        let (tx, mut rx) = channel(16);
+    let id = Uuid::new_v4();
+    let (tx, mut rx) = channel(16);
 
-        let handle = LocalWorkerHandle { tx, id, queue };
+    let handle = LocalWorkerHandle { tx, id, queue };
 
-        loop {
-            let span = handle.span("request");
-            if let Err(e) = server
-                .request_job(Box::new(handle.clone()))
-                .instrument(span.clone())
-                .await
-            {
+    loop {
+        let span = handle.span("request");
+        if let Err(e) = server
+            .request_job(Box::new(handle.clone()))
+            .instrument(span.clone())
+            .await
+        {
+            let display = format!("{}", e);
+            let debug = format!("{:?}", e);
+            span.record("exception.message", &tracing::field::display(&display));
+            span.record("exception.details", &tracing::field::display(&debug));
+            span.in_scope(|| error!("Failed to notify server of ready worker, {}", e));
+            break;
+        }
+        drop(span);
+
+        if let Some(job) = rx.recv().await {
+            let return_job = processors
+                .process(job)
+                .instrument(handle.span("process"))
+                .await;
+
+            let span = handle.span("return");
+            if let Err(e) = server.return_job(return_job).instrument(span.clone()).await {
                 let display = format!("{}", e);
                 let debug = format!("{:?}", e);
                 span.record("exception.message", &tracing::field::display(&display));
                 span.record("exception.details", &tracing::field::display(&debug));
-                span.in_scope(|| error!("Failed to notify server of ready worker, {}", e));
-                break;
-            }
-            drop(span);
-
-            if let Some(job) = rx.recv().await {
-                let return_job = processors
-                    .process(job)
-                    .instrument(handle.span("process"))
-                    .await;
-
-                let span = handle.span("return");
-                if let Err(e) = server.return_job(return_job).instrument(span.clone()).await {
-                    let display = format!("{}", e);
-                    let debug = format!("{:?}", e);
-                    span.record("exception.message", &tracing::field::display(&display));
-                    span.record("exception.details", &tracing::field::display(&debug));
-                    span.in_scope(|| warn!("Failed to return completed job, {}", e));
-                }
-
-                continue;
+                span.in_scope(|| warn!("Failed to return completed job, {}", e));
             }
 
-            break;
+            continue;
         }
-        handle.span("closing").in_scope(|| info!("Worker closing"));
-    });
+
+        break;
+    }
+
+    handle.span("closing").in_scope(|| info!("Worker closing"));
 }

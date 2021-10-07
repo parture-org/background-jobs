@@ -10,7 +10,7 @@ edition = "2018"
 actix-rt = "2.0.0"
 anyhow = "1.0"
 async-trait = "0.1.24"
-background-jobs = { version = "0.10.0", path = "../..", features = ["error-logging"] }
+background-jobs = { version = "0.11.0", path = "../..", features = ["error-logging"] }
 background-jobs-sled-storage = { version = "0.10.0", path = "../../jobs-sled" }
 chrono = "0.4"
 tracing = "0.1"

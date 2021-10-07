@@ -121,7 +121,6 @@ use anyhow::Error;
 use background_jobs_core::{new_job, new_scheduled_job, Job, ProcessorMap, Stats, Storage};
 use chrono::{DateTime, Utc};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
-use tracing::error;
 
 mod every;
 mod server;
@@ -143,10 +142,25 @@ pub fn create_server<S>(storage: S) -> QueueHandle
 where
     S: Storage + Sync + 'static,
 {
-    let arbiter = Arbiter::current();
+    create_server_in_arbiter(storage, &Arbiter::current())
+}
+
+/// Create a new Server
+///
+/// In previous versions of this library, the server itself was run on it's own dedicated threads
+/// and guarded access to jobs via messages. Since we now have futures-aware synchronization
+/// primitives, the Server has become an object that gets shared between client threads.
+///
+/// This method will panic if not called from an actix runtime
+pub fn create_server_in_arbiter<S>(storage: S, arbiter: &ArbiterHandle) -> QueueHandle
+where
+    S: Storage + Sync + 'static,
+{
+    let tokio_rt = tokio::runtime::Handle::current();
+
     QueueHandle {
         inner: Server::new(&arbiter, storage),
-        arbiter,
+        tokio_rt,
     }
 }
 
@@ -209,19 +223,11 @@ where
     ///
     /// This method will panic if not called from an actix runtime
     pub fn start(self, queue_handle: QueueHandle) {
-        for (key, count) in self.queues.into_iter() {
-            for _ in 0..count {
-                local_worker(
-                    key.clone(),
-                    self.processors.cached(),
-                    queue_handle.inner.clone(),
-                );
-            }
-        }
+        self.start_in_arbiter(&Arbiter::current(), queue_handle)
     }
 
     /// Start the workers in the provided arbiter
-    pub fn start_in_arbiter(self, arbiter: &Arbiter, queue_handle: QueueHandle) {
+    pub fn start_in_arbiter(self, arbiter: &ArbiterHandle, queue_handle: QueueHandle) {
         for (key, count) in self.queues.into_iter() {
             for _ in 0..count {
                 let key = key.clone();
@@ -229,7 +235,7 @@ where
                 let server = queue_handle.inner.clone();
 
                 arbiter.spawn_fn(move || {
-                    local_worker(key, processors.cached(), server);
+                    actix_rt::spawn(local_worker(key, processors.cached(), server));
                 });
             }
         }
@@ -243,7 +249,7 @@ where
 #[derive(Clone)]
 pub struct QueueHandle {
     inner: Server,
-    arbiter: ArbiterHandle,
+    tokio_rt: tokio::runtime::Handle,
 }
 
 impl QueueHandle {
@@ -251,17 +257,37 @@ impl QueueHandle {
     ///
     /// This job will be sent to the server for storage, and will execute whenever a worker for the
     /// job's queue is free to do so.
-    pub fn queue<J>(&self, job: J) -> Result<(), Error>
+    pub async fn queue<J>(&self, job: J) -> Result<(), Error>
     where
         J: Job,
     {
         let job = new_job(job)?;
+        self.inner.new_job(job).await?;
+        Ok(())
+    }
+
+    /// Queues a job for execution
+    ///
+    /// This job will be sent to the server for storage, and will execute whenever a worker for the
+    /// job's queue is free to do so.
+    pub async fn blocking_queue<J>(&self, job: J) -> Result<(), Error>
+    where
+        J: Job,
+    {
+        self.tokio_rt.block_on(self.queue(job))
+    }
+
+    /// Schedule a job for execution later
+    ///
+    /// This job will be sent to the server for storage, and will execute after the specified time
+    /// and when a worker for the job's queue is free to do so.
+    pub async fn schedule<J>(&self, job: J, after: DateTime<Utc>) -> Result<(), Error>
+    where
+        J: Job,
+    {
+        let job = new_scheduled_job(job, after)?;
         let server = self.inner.clone();
-        self.arbiter.spawn(async move {
-            if let Err(e) = server.new_job(job).await {
-                error!("Error creating job, {}", e);
-            }
-        });
+        server.new_job(job).await?;
         Ok(())
     }
 
@@ -269,18 +295,11 @@ impl QueueHandle {
     ///
     /// This job will be sent to the server for storage, and will execute after the specified time
     /// and when a worker for the job's queue is free to do so.
-    pub fn schedule<J>(&self, job: J, after: DateTime<Utc>) -> Result<(), Error>
+    pub fn blocking_schedule<J>(&self, job: J, after: DateTime<Utc>) -> Result<(), Error>
     where
         J: Job,
     {
-        let job = new_scheduled_job(job, after)?;
-        let server = self.inner.clone();
-        self.arbiter.spawn(async move {
-            if let Err(e) = server.new_job(job).await {
-                error!("Error creating job, {}", e);
-            }
-        });
-        Ok(())
+        self.tokio_rt.block_on(self.schedule(job, after))
     }
 
     /// Queues a job for recurring execution

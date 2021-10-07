@@ -14,14 +14,15 @@ where
     J: Job + Clone + Send,
 {
     let spawner_clone = spawner.clone();
-    spawner.arbiter.spawn(async move {
+    spawner.tokio_rt.spawn(async move {
         let mut interval = interval_at(Instant::now(), duration);
 
         loop {
             interval.tick().await;
 
-            if spawner_clone.queue(job.clone()).is_err() {
-                error!("Failed to queue job");
+            let job = job.clone();
+            if spawner_clone.queue::<J>(job).await.is_err() {
+                error!("Failed to queue job: {}", J::NAME);
             }
         }
     });
