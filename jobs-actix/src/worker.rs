@@ -56,6 +56,19 @@ impl Worker for LocalWorkerHandle {
     }
 }
 
+struct LogOnDrop<F>(F)
+where
+    F: Fn() -> Span;
+
+impl<F> Drop for LogOnDrop<F>
+where
+    F: Fn() -> Span,
+{
+    fn drop(&mut self) {
+        (self.0)().in_scope(|| info!("Worker closing"));
+    }
+}
+
 pub(crate) async fn local_worker<State>(
     queue: String,
     processors: CachedProcessorMap<State>,
@@ -67,6 +80,8 @@ pub(crate) async fn local_worker<State>(
     let (tx, mut rx) = channel(16);
 
     let handle = LocalWorkerHandle { tx, id, queue };
+
+    let log_on_drop = LogOnDrop(|| handle.span("closing"));
 
     loop {
         let span = handle.span("request");
@@ -105,5 +120,5 @@ pub(crate) async fn local_worker<State>(
         break;
     }
 
-    handle.span("closing").in_scope(|| info!("Worker closing"));
+    drop(log_on_drop);
 }
