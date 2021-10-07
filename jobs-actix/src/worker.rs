@@ -42,6 +42,14 @@ impl Worker for LocalWorkerHandle {
     }
 }
 
+struct WarnOnDrop(Uuid);
+
+impl Drop for WarnOnDrop {
+    fn drop(&mut self) {
+        warn!("Worker {} closing", self.0);
+    }
+}
+
 pub(crate) fn local_worker<State>(
     queue: String,
     processors: CachedProcessorMap<State>,
@@ -56,6 +64,7 @@ pub(crate) fn local_worker<State>(
     let handle = LocalWorkerHandle { tx, id, queue };
 
     spawn(async move {
+        let warn_on_drop = WarnOnDrop(id);
         debug!("Beginning worker loop for {}", id);
         if let Err(e) = server.request_job(Box::new(handle.clone())).await {
             error!("Couldn't request first job, bailing, {}", e);
@@ -72,6 +81,6 @@ pub(crate) fn local_worker<State>(
                 break;
             }
         }
-        warn!("Worker {} closing", id);
+        drop(warn_on_drop);
     });
 }
