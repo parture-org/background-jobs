@@ -216,17 +216,7 @@ where
 
     /// Start the workers in the provided arbiter
     pub fn start_in_arbiter(self, arbiter: &Arbiter, queue_handle: QueueHandle) {
-        for (key, count) in self.queues.into_iter() {
-            for _ in 0..count {
-                let key = key.clone();
-                let processors = self.processors.clone();
-                let server = queue_handle.inner.clone();
-
-                arbiter.spawn_fn(move || {
-                    local_worker(key, processors.cached(), server);
-                });
-            }
-        }
+        self.start_in_arbiter_handle(&arbiter.handle(), queue_handle)
     }
 
     /// Start the workers in the provided arbiter via it's handle
