@@ -10,13 +10,13 @@ readme = "../README.md"
 edition = "2018"
 
 [features]
-default = []
-with-actix = ["actix-rt", "tokio"]
+default = ["error-logging"]
+with-actix = ["actix-rt"]
 completion-logging = []
 error-logging = []
 
 [dependencies]
-actix-rt = { version = "2.2.0", optional = true }
+actix-rt = { version = "2.3.0", optional = true }
 anyhow = "1.0"
 async-mutex = "1.0.1"
 async-trait = "0.1.24"
@@ -26,5 +26,4 @@ tracing-futures = "0.2.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
-tokio = { version = "1", optional = true, default-features = false, features = ["sync"] }
 uuid = { version = "0.8.1", features = ["serde", "v4"] }

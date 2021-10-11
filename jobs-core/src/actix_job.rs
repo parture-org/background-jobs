@@ -1,9 +1,14 @@
 use crate::{Backoff, Job, MaxRetries};
+use actix_rt::task::JoinHandle;
 use anyhow::Error;
 use serde::{de::DeserializeOwned, ser::Serialize};
-use std::{future::Future, pin::Pin};
-use tokio::sync::oneshot;
-use tracing::{error, Span};
+use std::{
+    fmt::Debug,
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+use tracing::Span;
 use tracing_futures::Instrument;
 
 /// The ActixJob trait defines parameters pertaining to an instance of background job
@@ -96,12 +101,27 @@ pub trait ActixJob: Serialize + DeserializeOwned + 'static {
     }
 }
 
+#[doc(hidden)]
+pub struct UnwrapFuture<F>(F);
+
+impl<F, T, E> Future for UnwrapFuture<F>
+where
+    F: Future<Output = Result<T, E>> + Unpin,
+    E: Debug,
+{
+    type Output = T;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.0).poll(cx).map(|res| res.unwrap())
+    }
+}
+
 impl<T> Job for T
 where
     T: ActixJob + std::panic::UnwindSafe,
 {
     type State = T::State;
-    type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
+    type Future = UnwrapFuture<JoinHandle<Result<(), Error>>>;
 
     const NAME: &'static str = <Self as ActixJob>::NAME;
     const QUEUE: &'static str = <Self as ActixJob>::QUEUE;
@@ -110,24 +130,11 @@ where
     const TIMEOUT: i64 = <Self as ActixJob>::TIMEOUT;
 
     fn run(self, state: Self::State) -> Self::Future {
-        let (tx, rx) = oneshot::channel();
-
         let fut = ActixJob::run(self, state);
-        let handle = actix_rt::spawn(
-            async move {
-                let result = fut.await;
+        let instrumented = fut.instrument(Span::current());
+        let handle = actix_rt::spawn(instrumented);
 
-                if tx.send(result).is_err() {
-                    error!("Job dropped");
-                }
-            }
-            .instrument(Span::current()),
-        );
-
-        Box::pin(async move {
-            handle.await.unwrap();
-            rx.await?
-        })
+        UnwrapFuture(handle)
     }
 
     fn span(&self) -> Option<Span> {
