@@ -7,7 +7,7 @@ authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/Aardwolf/background-jobs"
 keywords = ["jobs", "processor"]
 readme = "../README.md"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 actix-rt = "2.2.0"
