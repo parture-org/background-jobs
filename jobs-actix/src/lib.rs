@@ -120,16 +120,135 @@ use actix_rt::{Arbiter, ArbiterHandle};
 use anyhow::Error;
 use background_jobs_core::{new_job, new_scheduled_job, Job, ProcessorMap, Stats, Storage};
 use chrono::{DateTime, Utc};
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, ops::Deref, sync::Arc, time::Duration};
 
 mod every;
 mod server;
 mod storage;
 mod worker;
 
-use self::{every::every, server::Server, worker::local_worker};
+use self::{every::every, server::Server, worker::LocalWorkerStarter};
 
 pub use background_jobs_core::ActixJob;
+
+/// Manager for worker threads
+///
+/// Manager attempts to restart workers as their arbiters die
+pub struct Manager {
+    // the manager arbiter
+    _arbiter: ArbiterDropper,
+
+    // handle for queueing
+    queue_handle: QueueHandle,
+}
+
+struct ArbiterDropper {
+    arbiter: Option<Arbiter>,
+}
+
+impl Manager {
+    /// Create a new manager to keep jobs alive
+    ///
+    /// Manager works by startinng a new Arbiter to run jobs, and if that arbiter ever dies, it
+    /// spins up another one and spawns the workers again
+    pub fn new<S, State>(storage: S, worker_config: WorkerConfig<State>) -> Self
+    where
+        S: Storage + Sync + 'static,
+        State: Clone,
+    {
+        let arbiter = Arbiter::new();
+        let worker_arbiter = Arbiter::new();
+        let notifier = Arc::new(tokio::sync::Notify::new());
+
+        let queue_handle = create_server_managed(storage);
+
+        let drop_notifier = DropNotifier::new(Arc::clone(&notifier));
+        let queue_handle_2 = queue_handle.clone();
+        arbiter.spawn(async move {
+            let queue_handle = queue_handle_2;
+
+            let mut drop_notifier = drop_notifier;
+            let mut arbiter = ArbiterDropper {
+                arbiter: Some(worker_arbiter),
+            };
+
+            loop {
+                queue_handle
+                    .inner
+                    .ticker(arbiter.handle(), drop_notifier.clone());
+                worker_config.start_managed(
+                    &arbiter.handle(),
+                    queue_handle.clone(),
+                    &drop_notifier,
+                );
+
+                notifier.notified().await;
+                // drop_notifier needs to live at least as long as notifier.notified().await
+                // in order to ensure we get notified by ticker or a worker, and not ourselves
+                drop(drop_notifier);
+
+                // Assume arbiter is dead if we were notified
+                if arbiter.spawn(async {}) {
+                    panic!("Arbiter should be dead by now");
+                }
+
+                arbiter = ArbiterDropper {
+                    arbiter: Some(Arbiter::new()),
+                };
+
+                drop_notifier = DropNotifier::new(Arc::clone(&notifier));
+            }
+        });
+
+        Manager {
+            _arbiter: ArbiterDropper {
+                arbiter: Some(arbiter),
+            },
+            queue_handle,
+        }
+    }
+
+    /// Retrieve the QueueHandle for the managed workers
+    pub fn queue_handle(&self) -> &QueueHandle {
+        &self.queue_handle
+    }
+}
+
+impl Deref for ArbiterDropper {
+    type Target = Arbiter;
+
+    fn deref(&self) -> &Self::Target {
+        self.arbiter.as_ref().unwrap()
+    }
+}
+
+impl Drop for ArbiterDropper {
+    fn drop(&mut self) {
+        self.stop();
+        let _ = self.arbiter.take().unwrap().join();
+    }
+}
+
+#[derive(Clone)]
+struct DropNotifier {
+    inner: Arc<std::sync::Mutex<Option<Arc<tokio::sync::Notify>>>>,
+}
+
+impl DropNotifier {
+    fn new(notify: Arc<tokio::sync::Notify>) -> Self {
+        DropNotifier {
+            inner: Arc::new(std::sync::Mutex::new(Some(notify))),
+        }
+    }
+}
+
+impl Drop for DropNotifier {
+    fn drop(&mut self) {
+        if let Some(notifier) = self.inner.lock().unwrap().take() {
+            notifier.notify_one();
+        }
+    }
+}
 
 /// Create a new Server
 ///
@@ -142,7 +261,7 @@ pub fn create_server<S>(storage: S) -> QueueHandle
 where
     S: Storage + Sync + 'static,
 {
-    create_server_in_arbiter(storage, Arbiter::current())
+    create_server_in_arbiter(Arbiter::current(), storage)
 }
 
 /// Create a new Server
@@ -152,15 +271,26 @@ where
 /// primitives, the Server has become an object that gets shared between client threads.
 ///
 /// This method will panic if not called from an actix runtime
-pub fn create_server_in_arbiter<S>(storage: S, arbiter: ArbiterHandle) -> QueueHandle
+pub fn create_server_in_arbiter<S>(arbiter: ArbiterHandle, storage: S) -> QueueHandle
 where
     S: Storage + Sync + 'static,
 {
-    let tokio_rt = tokio::runtime::Handle::current();
+    let handle = create_server_managed(storage);
+    handle.inner.ticker(arbiter, ());
+    handle
+}
 
+/// Create a new managed Server
+///
+/// In previous versions of this library, the server itself was run on it's own dedicated threads
+/// and guarded access to jobs via messages. Since we now have futures-aware synchronization
+/// primitives, the Server has become an object that gets shared between client threads.
+pub fn create_server_managed<S>(storage: S) -> QueueHandle
+where
+    S: Storage + Sync + 'static,
+{
     QueueHandle {
-        inner: Server::new(arbiter, storage),
-        tokio_rt,
+        inner: Server::new(storage),
     }
 }
 
@@ -228,14 +358,31 @@ where
 
     /// Start the workers in the provided arbiter
     pub fn start_in_arbiter(self, arbiter: &ArbiterHandle, queue_handle: QueueHandle) {
-        for (key, count) in self.queues.into_iter() {
-            for _ in 0..count {
-                let key = key.clone();
+        self.start_managed(arbiter, queue_handle, &())
+    }
+
+    /// Start a workers in a managed way
+    pub fn start_managed<Extras: Clone + Send + 'static>(
+        &self,
+        arbiter: &ArbiterHandle,
+        queue_handle: QueueHandle,
+        extras: &Extras,
+    ) {
+        for (key, count) in self.queues.iter() {
+            for _ in 0..*count {
+                let queue = key.clone();
                 let processors = self.processors.clone();
                 let server = queue_handle.inner.clone();
 
+                let extras_2 = extras.clone();
+
                 arbiter.spawn_fn(move || {
-                    actix_rt::spawn(local_worker(key, processors.cached(), server));
+                    drop(LocalWorkerStarter::new(
+                        queue,
+                        processors.cached(),
+                        server,
+                        extras_2,
+                    ));
                 });
             }
         }
@@ -249,7 +396,6 @@ where
 #[derive(Clone)]
 pub struct QueueHandle {
     inner: Server,
-    tokio_rt: tokio::runtime::Handle,
 }
 
 impl QueueHandle {
@@ -266,17 +412,6 @@ impl QueueHandle {
         Ok(())
     }
 
-    /// Queues a job for execution
-    ///
-    /// This job will be sent to the server for storage, and will execute whenever a worker for the
-    /// job's queue is free to do so.
-    pub async fn blocking_queue<J>(&self, job: J) -> Result<(), Error>
-    where
-        J: Job,
-    {
-        self.tokio_rt.block_on(self.queue(job))
-    }
-
     /// Schedule a job for execution later
     ///
     /// This job will be sent to the server for storage, and will execute after the specified time
@@ -291,17 +426,6 @@ impl QueueHandle {
         Ok(())
     }
 
-    /// Schedule a job for execution later
-    ///
-    /// This job will be sent to the server for storage, and will execute after the specified time
-    /// and when a worker for the job's queue is free to do so.
-    pub fn blocking_schedule<J>(&self, job: J, after: DateTime<Utc>) -> Result<(), Error>
-    where
-        J: Job,
-    {
-        self.tokio_rt.block_on(self.schedule(job, after))
-    }
-
     /// Queues a job for recurring execution
     ///
     /// This job will be added to it's queue on the server once every `Duration`. It will be
@@ -310,7 +434,7 @@ impl QueueHandle {
     where
         J: Job + Clone + Send + 'static,
     {
-        every(self, duration, job);
+        actix_rt::spawn(every(self.clone(), duration, job));
     }
 
     /// Return an overview of the processor's statistics

@@ -23,19 +23,24 @@ pub(crate) struct ServerCache {
     cache: Arc<Mutex<HashMap<String, WorkerQueue>>>,
 }
 
-struct Ticker {
+pub(super) struct Ticker<Extras: Send + 'static> {
     server: Server,
+    extras: Option<Extras>,
+    arbiter: ArbiterHandle,
 }
 
-impl Drop for Ticker {
+impl<Extras: Send + 'static> Drop for Ticker<Extras> {
     fn drop(&mut self) {
-        let online = self.server.arbiter.spawn(async move {});
+        let online = self.arbiter.spawn(async move {});
+
+        let extras = self.extras.take().unwrap();
 
         if online {
             let server = self.server.clone();
 
-            self.server.arbiter.spawn(async move {
-                let _ticker = server.ticker();
+            let arbiter = self.arbiter.clone();
+            let spawned = self.arbiter.spawn(async move {
+                let _ticker = server.ticker(arbiter, extras);
                 let mut interval = interval_at(Instant::now(), Duration::from_secs(1));
 
                 loop {
@@ -45,9 +50,13 @@ impl Drop for Ticker {
                     }
                 }
             });
-        } else {
-            warn!("Not restarting ticker, arbiter is dead");
+
+            if spawned {
+                return;
+            }
         }
+
+        warn!("Not restarting ticker, arbiter is dead");
     }
 }
 
@@ -59,29 +68,30 @@ impl Drop for Ticker {
 pub(crate) struct Server {
     storage: Arc<dyn ActixStorage + Send + Sync>,
     cache: ServerCache,
-    arbiter: ArbiterHandle,
 }
 
 impl Server {
-    fn ticker(&self) -> Ticker {
+    pub(super) fn ticker<Extras: Send + 'static>(
+        &self,
+        arbiter: ArbiterHandle,
+        extras: Extras,
+    ) -> Ticker<Extras> {
         Ticker {
             server: self.clone(),
+            extras: Some(extras),
+            arbiter,
         }
     }
+
     /// Create a new Server from a compatible storage implementation
-    pub(crate) fn new<S>(arbiter: ArbiterHandle, storage: S) -> Self
+    pub(crate) fn new<S>(storage: S) -> Self
     where
         S: Storage + Sync + 'static,
     {
-        let server = Server {
+        Server {
             storage: Arc::new(StorageWrapper(storage)),
             cache: ServerCache::new(),
-            arbiter,
-        };
-
-        drop(server.ticker());
-
-        server
+        }
     }
 
     async fn check_db(&self) -> Result<(), Error> {

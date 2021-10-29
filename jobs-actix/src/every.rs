@@ -9,21 +9,18 @@ use tracing::error;
 /// let server = create_server(storage);
 /// server.every(Duration::from_secs(60 * 30), MyJob::new());
 /// ```
-pub(crate) fn every<J>(spawner: &QueueHandle, duration: Duration, job: J)
+pub(crate) async fn every<J>(spawner: QueueHandle, duration: Duration, job: J)
 where
     J: Job + Clone + Send,
 {
-    let spawner_clone = spawner.clone();
-    spawner.tokio_rt.spawn(async move {
-        let mut interval = interval_at(Instant::now(), duration);
+    let mut interval = interval_at(Instant::now(), duration);
 
-        loop {
-            interval.tick().await;
+    loop {
+        interval.tick().await;
 
-            let job = job.clone();
-            if spawner_clone.queue::<J>(job).await.is_err() {
-                error!("Failed to queue job: {}", J::NAME);
-            }
+        let job = job.clone();
+        if spawner.queue::<J>(job).await.is_err() {
+            error!("Failed to queue job: {}", J::NAME);
         }
-    });
+    }
 }

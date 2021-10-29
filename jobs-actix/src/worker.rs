@@ -56,24 +56,45 @@ impl Worker for LocalWorkerHandle {
     }
 }
 
-struct LocalWorkerStarter<State: Clone + 'static> {
+pub(crate) struct LocalWorkerStarter<State: Clone + 'static, Extras: 'static> {
     queue: String,
     processors: CachedProcessorMap<State>,
     server: Server,
+    extras: Option<Extras>,
 }
 
-impl<State: Clone + 'static> Drop for LocalWorkerStarter<State> {
+impl<State: Clone + 'static, Extras: 'static> LocalWorkerStarter<State, Extras> {
+    pub(super) fn new(
+        queue: String,
+        processors: CachedProcessorMap<State>,
+        server: Server,
+        extras: Extras,
+    ) -> Self {
+        LocalWorkerStarter {
+            queue,
+            processors,
+            server,
+            extras: Some(extras),
+        }
+    }
+}
+
+impl<State: Clone + 'static, Extras: 'static> Drop for LocalWorkerStarter<State, Extras> {
     fn drop(&mut self) {
         let res = std::panic::catch_unwind(|| actix_rt::Arbiter::current().spawn(async move {}));
+
+        let extras = self.extras.take().unwrap();
 
         if let Ok(true) = res {
             actix_rt::spawn(local_worker(
                 self.queue.clone(),
                 self.processors.clone(),
                 self.server.clone(),
+                extras,
             ));
         } else {
             warn!("Not restarting worker, Arbiter is dead");
+            drop(extras);
         }
     }
 }
@@ -91,18 +112,22 @@ where
     }
 }
 
-pub(crate) async fn local_worker<State>(
+async fn local_worker<State, Extras>(
     queue: String,
     processors: CachedProcessorMap<State>,
     server: Server,
+    extras: Extras,
 ) where
     State: Clone + 'static,
+    Extras: 'static,
 {
     let starter = LocalWorkerStarter {
         queue: queue.clone(),
         processors: processors.clone(),
         server: server.clone(),
+        extras: Some(extras),
     };
+
     let id = Uuid::new_v4();
     let (tx, mut rx) = channel(16);
 
