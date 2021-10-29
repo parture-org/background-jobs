@@ -172,4 +172,7 @@ pub mod dev {
 }
 
 #[cfg(feature = "background-jobs-actix")]
-pub use background_jobs_actix::{create_server, ActixJob, QueueHandle, WorkerConfig};
+pub use background_jobs_actix::{
+    create_server, create_server_in_arbiter, create_server_in_arbiter_handle, ActixJob,
+    QueueHandle, WorkerConfig,
+};
