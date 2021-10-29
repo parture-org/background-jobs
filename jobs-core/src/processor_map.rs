@@ -30,6 +30,7 @@ pub struct ProcessorMap<S> {
 ///
 /// [`Job`]s must be registered with  the `ProcessorMap` in the initialization phase of an
 /// application before workers are spawned in order to handle queued jobs.
+#[derive(Clone)]
 pub struct CachedProcessorMap<S> {
     inner: HashMap<String, ProcessFn<S>>,
     state: S,

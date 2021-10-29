@@ -14,13 +14,41 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tracing::{error, trace};
+use tracing::{error, trace, warn};
 
 type WorkerQueue = VecDeque<Box<dyn Worker + Send + Sync>>;
 
 #[derive(Clone)]
 pub(crate) struct ServerCache {
     cache: Arc<Mutex<HashMap<String, WorkerQueue>>>,
+}
+
+struct Ticker {
+    server: Server,
+}
+
+impl Drop for Ticker {
+    fn drop(&mut self) {
+        let online = self.server.arbiter.spawn(async move {});
+
+        if online {
+            let server = self.server.clone();
+
+            self.server.arbiter.spawn(async move {
+                let _ticker = server.ticker();
+                let mut interval = interval_at(Instant::now(), Duration::from_secs(1));
+
+                loop {
+                    interval.tick().await;
+                    if let Err(e) = server.check_db().await {
+                        error!("Error while checking database for new jobs, {}", e);
+                    }
+                }
+            });
+        } else {
+            warn!("Not restarting ticker, arbiter is dead");
+        }
+    }
 }
 
 /// The server Actor
@@ -31,32 +59,29 @@ pub(crate) struct ServerCache {
 pub(crate) struct Server {
     storage: Arc<dyn ActixStorage + Send + Sync>,
     cache: ServerCache,
+    arbiter: ArbiterHandle,
 }
 
 impl Server {
+    fn ticker(&self) -> Ticker {
+        Ticker {
+            server: self.clone(),
+        }
+    }
     /// Create a new Server from a compatible storage implementation
-    pub(crate) fn new<S>(arbiter: &ArbiterHandle, storage: S) -> Self
+    pub(crate) fn new<S>(arbiter: ArbiterHandle, storage: S) -> Self
     where
         S: Storage + Sync + 'static,
     {
         let server = Server {
             storage: Arc::new(StorageWrapper(storage)),
             cache: ServerCache::new(),
+            arbiter,
         };
 
-        let server2 = server.clone();
-        arbiter.spawn(async move {
-            let mut interval = interval_at(Instant::now(), Duration::from_secs(1));
+        drop(server.ticker());
 
-            loop {
-                interval.tick().await;
-                if let Err(e) = server.check_db().await {
-                    error!("Error while checking database for new jobs, {}", e);
-                }
-            }
-        });
-
-        server2
+        server
     }
 
     async fn check_db(&self) -> Result<(), Error> {

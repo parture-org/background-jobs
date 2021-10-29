@@ -56,6 +56,28 @@ impl Worker for LocalWorkerHandle {
     }
 }
 
+struct LocalWorkerStarter<State: Clone + 'static> {
+    queue: String,
+    processors: CachedProcessorMap<State>,
+    server: Server,
+}
+
+impl<State: Clone + 'static> Drop for LocalWorkerStarter<State> {
+    fn drop(&mut self) {
+        let res = std::panic::catch_unwind(|| actix_rt::Arbiter::current().spawn(async move {}));
+
+        if let Ok(true) = res {
+            actix_rt::spawn(local_worker(
+                self.queue.clone(),
+                self.processors.clone(),
+                self.server.clone(),
+            ));
+        } else {
+            warn!("Not restarting worker, Arbiter is dead");
+        }
+    }
+}
+
 struct LogOnDrop<F>(F)
 where
     F: Fn() -> Span;
@@ -76,6 +98,11 @@ pub(crate) async fn local_worker<State>(
 ) where
     State: Clone + 'static,
 {
+    let starter = LocalWorkerStarter {
+        queue: queue.clone(),
+        processors: processors.clone(),
+        server: server.clone(),
+    };
     let id = Uuid::new_v4();
     let (tx, mut rx) = channel(16);
 
@@ -121,4 +148,5 @@ pub(crate) async fn local_worker<State>(
     }
 
     drop(log_on_drop);
+    drop(starter);
 }

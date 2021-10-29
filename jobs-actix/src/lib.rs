@@ -142,7 +142,7 @@ pub fn create_server<S>(storage: S) -> QueueHandle
 where
     S: Storage + Sync + 'static,
 {
-    create_server_in_arbiter(storage, &Arbiter::current())
+    create_server_in_arbiter(storage, Arbiter::current())
 }
 
 /// Create a new Server
@@ -152,14 +152,14 @@ where
 /// primitives, the Server has become an object that gets shared between client threads.
 ///
 /// This method will panic if not called from an actix runtime
-pub fn create_server_in_arbiter<S>(storage: S, arbiter: &ArbiterHandle) -> QueueHandle
+pub fn create_server_in_arbiter<S>(storage: S, arbiter: ArbiterHandle) -> QueueHandle
 where
     S: Storage + Sync + 'static,
 {
     let tokio_rt = tokio::runtime::Handle::current();
 
     QueueHandle {
-        inner: Server::new(&arbiter, storage),
+        inner: Server::new(arbiter, storage),
         tokio_rt,
     }
 }
