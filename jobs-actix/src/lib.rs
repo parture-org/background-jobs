@@ -143,7 +143,22 @@ pub fn create_server<S>(storage: S) -> QueueHandle
 where
     S: Storage + Sync + 'static,
 {
-    let arbiter = Arbiter::current();
+    create_server_in_arbiter_handle(Arbiter::current(), storage)
+}
+
+/// Create a new server in the provided Arbiter
+pub fn create_server_in_arbiter<S>(arbiter: &Arbiter, storage: S) -> QueueHandle
+where
+    S: Storage + Sync + 'static,
+{
+    create_server_in_arbiter_handle(arbiter.handle(), storage)
+}
+
+/// Create a new server in the provided ArbiterHandle
+pub fn create_server_in_arbiter_handle<S>(arbiter: ArbiterHandle, storage: S) -> QueueHandle
+where
+    S: Storage + Sync + 'static,
+{
     QueueHandle {
         inner: Server::new(&arbiter, storage),
         arbiter,

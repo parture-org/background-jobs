@@ -1,7 +1,7 @@
 use crate::Server;
-use actix_rt::spawn;
+use actix_rt::{spawn, Arbiter};
 use background_jobs_core::{CachedProcessorMap, JobInfo};
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use tokio::sync::mpsc::{channel, Sender};
 use uuid::Uuid;
 
@@ -42,6 +42,32 @@ impl Worker for LocalWorkerHandle {
     }
 }
 
+struct LocalWorkerStarter<State: Clone + 'static> {
+    queue: String,
+    processors: CachedProcessorMap<State>,
+    server: Server,
+}
+
+impl<State: Clone + 'static> Drop for LocalWorkerStarter<State> {
+    fn drop(&mut self) {
+        let res = std::panic::catch_unwind(|| {
+            let handle = Arbiter::current();
+
+            handle.spawn(async move {})
+        });
+
+        if let Ok(true) = res {
+            local_worker(
+                self.queue.clone(),
+                self.processors.clone(),
+                self.server.clone(),
+            )
+        } else {
+            warn!("Not restarting worker, arbiter has died");
+        }
+    }
+}
+
 struct WarnOnDrop(Uuid);
 
 impl Drop for WarnOnDrop {
@@ -57,6 +83,11 @@ pub(crate) fn local_worker<State>(
 ) where
     State: Clone + 'static,
 {
+    let starter = LocalWorkerStarter {
+        queue: queue.clone(),
+        processors: processors.clone(),
+        server: server.clone(),
+    };
     let id = Uuid::new_v4();
 
     let (tx, mut rx) = channel(16);
@@ -64,6 +95,7 @@ pub(crate) fn local_worker<State>(
     let handle = LocalWorkerHandle { tx, id, queue };
 
     spawn(async move {
+        info!("Starting worker {}", id);
         let warn_on_drop = WarnOnDrop(id);
         debug!("Beginning worker loop for {}", id);
         if let Err(e) = server.request_job(Box::new(handle.clone())).await {
@@ -82,5 +114,6 @@ pub(crate) fn local_worker<State>(
             }
         }
         drop(warn_on_drop);
+        drop(starter);
     });
 }
