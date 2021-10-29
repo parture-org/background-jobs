@@ -136,14 +136,11 @@ async fn main() -> Result<(), Error> {
     use background_jobs::memory_storage::Storage;
     let storage = Storage::new();
 
-    // Start the application server. This guards access to to the jobs store
-    let queue_handle = create_server(storage);
-
     // Configure and start our workers
-    WorkerConfig::new(move || MyState::new("My App"))
+    let queue_handle = WorkerConfig::new(move || MyState::new("My App"))
         .register::<MyJob>()
         .set_worker_count(DEFAULT_QUEUE, 16)
-        .start(queue_handle.clone());
+        .start(storage);
 
     // Queue our jobs
     queue_handle.queue(MyJob::new(1, 2))?;

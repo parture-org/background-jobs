@@ -132,14 +132,11 @@
 //!     // Set up our Storage
 //!     let storage = Storage::new();
 //!
-//!     // Start the application server. This guards access to to the jobs store
-//!     let queue_handle = ServerConfig::new(storage).start();
-//!
 //!     // Configure and start our workers
-//!     WorkerConfig::new(move || MyState::new("My App"))
+//!     let queue_handle = WorkerConfig::new(move || MyState::new("My App"))
 //!         .register::<MyJob>()
 //!         .set_processor_count(DEFAULT_QUEUE, 16)
-//!         .start(queue_handle.clone());
+//!         .start(storage);
 //!
 //!     // Queue our jobs
 //!     queue_handle.queue(MyJob::new(1, 2))?;
@@ -172,6 +169,4 @@ pub mod dev {
 }
 
 #[cfg(feature = "background-jobs-actix")]
-pub use background_jobs_actix::{
-    create_server, create_server_in_arbiter, ActixJob, Manager, QueueHandle, WorkerConfig,
-};
+pub use background_jobs_actix::{ActixJob, Manager, QueueHandle, WorkerConfig};

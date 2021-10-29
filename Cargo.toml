@@ -14,8 +14,9 @@ members = [
     "jobs-actix",
     "jobs-core",
     "jobs-sled",
-    "examples/actix-example",
+    "examples/basic-example",
     "examples/managed-example",
+    "examples/panic-example",
 ]
 
 [features]

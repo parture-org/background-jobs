@@ -36,14 +36,11 @@
 //!     use background_jobs::memory_storage::Storage;
 //!     let storage = Storage::new();
 //!
-//!     // Start the application server. This guards access to to the jobs store
-//!     let queue_handle = create_server(storage);
-//!
 //!     // Configure and start our workers
-//!     WorkerConfig::new(move || MyState::new("My App"))
+//!     let queue_handle = WorkerConfig::new(move || MyState::new("My App"))
 //!         .register::<MyJob>()
 //!         .set_worker_count(DEFAULT_QUEUE, 16)
-//!         .start(queue_handle.clone());
+//!         .start(storage);
 //!
 //!     // Queue our jobs
 //!     queue_handle.queue(MyJob::new(1, 2))?;
@@ -151,7 +148,7 @@ impl Manager {
     ///
     /// Manager works by startinng a new Arbiter to run jobs, and if that arbiter ever dies, it
     /// spins up another one and spawns the workers again
-    pub fn new<S, State>(storage: S, worker_config: WorkerConfig<State>) -> Self
+    fn new<S, State>(storage: S, worker_config: WorkerConfig<State>) -> Self
     where
         S: Storage + Sync + 'static,
         State: Clone,
@@ -188,7 +185,8 @@ impl Manager {
                 drop(drop_notifier);
 
                 // Assume arbiter is dead if we were notified
-                if arbiter.spawn(async {}) {
+                let online = arbiter.spawn(async {});
+                if online {
                     panic!("Arbiter should be dead by now");
                 }
 
@@ -210,6 +208,14 @@ impl Manager {
 
     /// Retrieve the QueueHandle for the managed workers
     pub fn queue_handle(&self) -> &QueueHandle {
+        &self.queue_handle
+    }
+}
+
+impl Deref for Manager {
+    type Target = QueueHandle;
+
+    fn deref(&self) -> &Self::Target {
         &self.queue_handle
     }
 }
@@ -255,23 +261,7 @@ impl Drop for DropNotifier {
 /// In previous versions of this library, the server itself was run on it's own dedicated threads
 /// and guarded access to jobs via messages. Since we now have futures-aware synchronization
 /// primitives, the Server has become an object that gets shared between client threads.
-///
-/// This method will panic if not called from an actix runtime
-pub fn create_server<S>(storage: S) -> QueueHandle
-where
-    S: Storage + Sync + 'static,
-{
-    create_server_in_arbiter(Arbiter::current(), storage)
-}
-
-/// Create a new Server
-///
-/// In previous versions of this library, the server itself was run on it's own dedicated threads
-/// and guarded access to jobs via messages. Since we now have futures-aware synchronization
-/// primitives, the Server has become an object that gets shared between client threads.
-///
-/// This method will panic if not called from an actix runtime
-pub fn create_server_in_arbiter<S>(arbiter: ArbiterHandle, storage: S) -> QueueHandle
+fn create_server_in_arbiter<S>(arbiter: ArbiterHandle, storage: S) -> QueueHandle
 where
     S: Storage + Sync + 'static,
 {
@@ -285,7 +275,7 @@ where
 /// In previous versions of this library, the server itself was run on it's own dedicated threads
 /// and guarded access to jobs via messages. Since we now have futures-aware synchronization
 /// primitives, the Server has become an object that gets shared between client threads.
-pub fn create_server_managed<S>(storage: S) -> QueueHandle
+fn create_server_managed<S>(storage: S) -> QueueHandle
 where
     S: Storage + Sync + 'static,
 {
@@ -352,17 +342,28 @@ where
     /// Start the workers in the current arbiter
     ///
     /// This method will panic if not called from an actix runtime
-    pub fn start(self, queue_handle: QueueHandle) {
-        self.start_in_arbiter(&Arbiter::current(), queue_handle)
+    pub fn start<S: Storage + Send + Sync + 'static>(self, storage: S) -> QueueHandle {
+        self.start_in_arbiter(&Arbiter::current(), storage)
     }
 
     /// Start the workers in the provided arbiter
-    pub fn start_in_arbiter(self, arbiter: &ArbiterHandle, queue_handle: QueueHandle) {
-        self.start_managed(arbiter, queue_handle, &())
+    pub fn start_in_arbiter<S: Storage + Send + Sync + 'static>(
+        self,
+        arbiter: &ArbiterHandle,
+        storage: S,
+    ) -> QueueHandle {
+        let queue_handle = create_server_in_arbiter(arbiter.clone(), storage);
+        self.start_managed(arbiter, queue_handle.clone(), &());
+        queue_handle
+    }
+
+    /// Start the workers on a managed arbiter, and return the manager struct
+    pub fn managed<S: Storage + Send + Sync + 'static>(self, storage: S) -> Manager {
+        Manager::new(storage, self)
     }
 
     /// Start a workers in a managed way
-    pub fn start_managed<Extras: Clone + Send + 'static>(
+    fn start_managed<Extras: Clone + Send + 'static>(
         &self,
         arbiter: &ArbiterHandle,
         queue_handle: QueueHandle,

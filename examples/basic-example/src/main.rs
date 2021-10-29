@@ -1,6 +1,6 @@
 use actix_rt::Arbiter;
 use anyhow::Error;
-use background_jobs::{create_server_in_arbiter, ActixJob as Job, MaxRetries, WorkerConfig};
+use background_jobs::{ActixJob as Job, MaxRetries, WorkerConfig};
 use background_jobs_sled_storage::Storage;
 use chrono::{Duration, Utc};
 use std::future::{ready, Ready};
@@ -20,9 +20,6 @@ pub struct MyJob {
     other_usize: usize,
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct PanickingJob;
-
 #[actix_rt::main]
 async fn main() -> Result<(), Error> {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -37,20 +34,11 @@ async fn main() -> Result<(), Error> {
 
     let arbiter = Arbiter::new();
 
-    // Start the application server. This guards access to to the jobs store
-    let queue_handle = create_server_in_arbiter(arbiter.handle(), storage);
-
     // Configure and start our workers
-    WorkerConfig::new(move || MyState::new("My App"))
-        .register::<PanickingJob>()
+    let queue_handle = WorkerConfig::new(move || MyState::new("My App"))
         .register::<MyJob>()
         .set_worker_count(DEFAULT_QUEUE, 16)
-        .start_in_arbiter(&arbiter.handle(), queue_handle.clone());
-
-    // Queue some panicking job
-    for _ in 0..32 {
-        queue_handle.queue(PanickingJob).await?;
-    }
+        .start_in_arbiter(&arbiter.handle(), storage);
 
     // Queue our jobs
     queue_handle.queue(MyJob::new(1, 2)).await?;
@@ -113,21 +101,5 @@ impl Job for MyJob {
         info!("{}: args, {:?}", state.app_name, self);
 
         ready(Ok(()))
-    }
-}
-
-#[async_trait::async_trait]
-impl Job for PanickingJob {
-    type State = MyState;
-    type Future = Ready<Result<(), Error>>;
-
-    const NAME: &'static str = "PanickingJob";
-
-    const QUEUE: &'static str = DEFAULT_QUEUE;
-
-    const MAX_RETRIES: MaxRetries = MaxRetries::Count(0);
-
-    fn run(self, _: MyState) -> Self::Future {
-        panic!("boom")
     }
 }
