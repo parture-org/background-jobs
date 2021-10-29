@@ -1,5 +1,6 @@
+use actix_rt::Arbiter;
 use anyhow::Error;
-use background_jobs::{create_server, Job, MaxRetries, WorkerConfig};
+use background_jobs::{create_server_in_arbiter, Job, MaxRetries, WorkerConfig};
 use background_jobs_sled_storage::Storage;
 use chrono::{Duration, Utc};
 use std::future::{ready, Ready};
@@ -30,15 +31,17 @@ async fn main() -> Result<(), Error> {
     let db = sled::Config::new().temporary(true).open()?;
     let storage = Storage::new(db)?;
 
+    let arbiter = Arbiter::new();
+
     // Start the application server. This guards access to to the jobs store
-    let queue_handle = create_server(storage);
+    let queue_handle = create_server_in_arbiter(&arbiter, storage);
 
     // Configure and start our workers
     WorkerConfig::new(move || MyState::new("My App"))
         .register::<PanickingJob>()
         .register::<MyJob>()
         .set_worker_count(DEFAULT_QUEUE, 16)
-        .start(queue_handle.clone());
+        .start_in_arbiter(&arbiter, queue_handle.clone());
 
     // Queue some panicking job
     for _ in 0..32 {
@@ -53,6 +56,8 @@ async fn main() -> Result<(), Error> {
 
     // Block on Actix
     actix_rt::signal::ctrl_c().await?;
+    arbiter.stop();
+    let _ = arbiter.join();
     Ok(())
 }
 
