@@ -38,11 +38,12 @@ async fn main() -> Result<(), Error> {
     let arbiter = Arbiter::new();
 
     // Configure and start our workers
-    let queue_handle = WorkerConfig::new(move || MyState::new("My App"))
-        .register::<PanickingJob>()
-        .register::<MyJob>()
-        .set_worker_count(DEFAULT_QUEUE, 16)
-        .start_in_arbiter(&arbiter.handle(), storage);
+    let queue_handle =
+        WorkerConfig::new_in_arbiter(arbiter.handle(), storage, |_| MyState::new("My App"))
+            .register::<PanickingJob>()
+            .register::<MyJob>()
+            .set_worker_count(DEFAULT_QUEUE, 16)
+            .start();
 
     // Queue some panicking job
     for _ in 0..32 {

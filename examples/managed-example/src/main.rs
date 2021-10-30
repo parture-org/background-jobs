@@ -36,11 +36,11 @@ async fn main() -> Result<(), Error> {
     let storage = Storage::new(db)?;
 
     // Configure and start our workers
-    let manager = WorkerConfig::new(move || MyState::new("My App"))
+    let manager = WorkerConfig::new_managed(storage, move |_| MyState::new("My App"))
         .register::<StopJob>()
         .register::<MyJob>()
         .set_worker_count(DEFAULT_QUEUE, 16)
-        .managed(storage);
+        .start();
 
     // Queue our jobs
     manager.queue(MyJob::new(1, 2)).await?;
