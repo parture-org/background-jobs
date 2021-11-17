@@ -154,6 +154,7 @@ where
     let args = job.args();
     let id = job.id();
     let name = job.name().to_owned();
+    info!("Job {} {} starting", id, name);
 
     let start = Utc::now();
 
