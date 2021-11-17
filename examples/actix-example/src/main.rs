@@ -3,7 +3,10 @@ use anyhow::Error;
 use background_jobs::{create_server_in_arbiter, ActixJob, MaxRetries, WorkerConfig};
 use background_jobs_sled_storage::Storage;
 use chrono::{Duration, Utc};
-use std::future::{ready, Ready};
+use std::{
+    future::{ready, Future, Ready},
+    pin::Pin,
+};
 
 const DEFAULT_QUEUE: &str = "default";
 
@@ -20,6 +23,9 @@ pub struct MyJob {
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct PanickingJob;
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct LongJob;
 
 #[actix_rt::main]
 async fn main() -> Result<(), Error> {
@@ -38,6 +44,7 @@ async fn main() -> Result<(), Error> {
 
     // Configure and start our workers
     WorkerConfig::new(move || MyState::new("My App"))
+        .register::<LongJob>()
         .register::<PanickingJob>()
         .register::<MyJob>()
         .set_worker_count(DEFAULT_QUEUE, 16)
@@ -53,6 +60,7 @@ async fn main() -> Result<(), Error> {
     queue_handle.queue(MyJob::new(3, 4))?;
     queue_handle.queue(MyJob::new(5, 6))?;
     queue_handle.schedule(MyJob::new(7, 8), Utc::now() + Duration::seconds(2))?;
+    queue_handle.queue(LongJob)?;
 
     // Block on Actix
     actix_rt::signal::ctrl_c().await?;
@@ -105,6 +113,25 @@ impl ActixJob for MyJob {
         println!("{}: args, {:?}", state.app_name, self);
 
         ready(Ok(()))
+    }
+}
+
+#[async_trait::async_trait]
+impl ActixJob for LongJob {
+    type State = MyState;
+    type Future = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
+
+    const NAME: &'static str = "LongJob";
+
+    const QUEUE: &'static str = DEFAULT_QUEUE;
+
+    const MAX_RETRIES: MaxRetries = MaxRetries::Count(0);
+
+    fn run(self, _: MyState) -> Self::Future {
+        Box::pin(async move {
+            actix_rt::time::sleep(std::time::Duration::from_secs(120)).await;
+            Ok(())
+        })
     }
 }
 
