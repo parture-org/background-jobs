@@ -271,11 +271,14 @@ impl QueueHandle {
     {
         let job = new_job(job)?;
         let server = self.inner.clone();
-        self.arbiter.spawn(async move {
+        let success = self.arbiter.spawn(async move {
             if let Err(e) = server.new_job(job).await {
                 error!("Error creating job, {}", e);
             }
         });
+        if !success {
+            return Err(anyhow::anyhow!("Failed to queue job"));
+        }
         Ok(())
     }
 
@@ -289,11 +292,14 @@ impl QueueHandle {
     {
         let job = new_scheduled_job(job, after)?;
         let server = self.inner.clone();
-        self.arbiter.spawn(async move {
+        let success = self.arbiter.spawn(async move {
             if let Err(e) = server.new_job(job).await {
                 error!("Error creating job, {}", e);
             }
         });
+        if !success {
+            return Err(anyhow::anyhow!("Failed to schedule job"));
+        }
         Ok(())
     }
 
