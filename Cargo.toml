@@ -15,6 +15,7 @@ members = [
     "jobs-core",
     "jobs-sled",
     "examples/basic-example",
+    "examples/long-example",
     "examples/managed-example",
     "examples/panic-example",
 ]

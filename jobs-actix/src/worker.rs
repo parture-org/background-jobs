@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use crate::Server;
 use background_jobs_core::{CachedProcessorMap, JobInfo};
 use tokio::sync::mpsc::{channel, Sender};
@@ -112,6 +114,33 @@ where
     }
 }
 
+async fn time_job<F: Future + Unpin>(mut future: F, job_id: Uuid) -> <F as Future>::Output {
+    let mut interval = actix_rt::time::interval(std::time::Duration::from_secs(5));
+    interval.tick().await;
+    let mut count = 0;
+
+    loop {
+        tokio::select! {
+            output = &mut future => { break output }
+            _ = interval.tick() => {
+                count += 5;
+
+                if count > (60 * 60) {
+                    if count % (60 * 20) == 0 {
+                        warn!("Job {} is taking a long time: {} hours", job_id, count / 60 / 60);
+                    }
+                } else if count > 60 {
+                    if count % 20 == 0 {
+                        warn!("Job {} is taking a long time: {} minutes", job_id, count / 60);
+                    }
+                } else {
+                    info!("Job {} is taking a long time: {} seconds", job_id, count);
+                }
+            }
+        }
+    }
+}
+
 async fn local_worker<State, Extras>(
     queue: String,
     processors: CachedProcessorMap<State>,
@@ -152,8 +181,8 @@ async fn local_worker<State, Extras>(
         drop(span);
 
         if let Some(job) = rx.recv().await {
-            let return_job = processors
-                .process(job)
+            let job_id = job.id();
+            let return_job = time_job(Box::pin(processors.process(job)), job_id)
                 .instrument(handle.span("process"))
                 .await;
 
