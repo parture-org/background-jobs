@@ -2,6 +2,7 @@ use crate::Server;
 use actix_rt::{spawn, Arbiter};
 use background_jobs_core::{CachedProcessorMap, JobInfo};
 use log::{debug, error, info, warn};
+use std::future::Future;
 use tokio::sync::mpsc::{channel, Sender};
 use uuid::Uuid;
 
@@ -76,6 +77,33 @@ impl Drop for WarnOnDrop {
     }
 }
 
+async fn time_job<F: Future + Unpin>(mut future: F, job_id: Uuid) -> <F as Future>::Output {
+    let mut interval = actix_rt::time::interval(std::time::Duration::from_secs(5));
+    interval.tick().await;
+    let mut count = 0;
+
+    loop {
+        tokio::select! {
+            output = &mut future => { break output },
+            _ = interval.tick() => {
+                count += 5;
+
+                if count > 60 * 60 {
+                    if count % (60 * 20) == 0 {
+                        warn!("Job {} is taking a long time: {} hours", job_id, count / 60 / 60);
+                    }
+                } else if count >= 60 {
+                    if count % 20 == 0 {
+                        info!("Job {} is taking a long time: {} minutes", job_id, count / 60);
+                    }
+                } else {
+                    info!("Job {} is taking a long time: {} seconds", job_id, count);
+                }
+            },
+        };
+    }
+}
+
 pub(crate) fn local_worker<State>(
     queue: String,
     processors: CachedProcessorMap<State>,
@@ -103,7 +131,8 @@ pub(crate) fn local_worker<State>(
             return;
         }
         while let Some(job) = rx.recv().await {
-            let return_job = processors.process(job).await;
+            let id = job.id();
+            let return_job = time_job(Box::pin(processors.process(job)), id).await;
 
             if let Err(e) = server.return_job(return_job).await {
                 error!("Error returning job, {}", e);
