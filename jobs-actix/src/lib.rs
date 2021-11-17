@@ -464,8 +464,7 @@ impl QueueHandle {
         J: Job,
     {
         let job = new_scheduled_job(job, after)?;
-        let server = self.inner.clone();
-        server.new_job(job).await?;
+        self.inner.new_job(job).await?;
         Ok(())
     }
 
