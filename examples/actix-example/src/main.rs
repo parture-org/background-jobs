@@ -1,6 +1,6 @@
 use actix_rt::Arbiter;
 use anyhow::Error;
-use background_jobs::{create_server_in_arbiter, Job, MaxRetries, WorkerConfig};
+use background_jobs::{create_server_in_arbiter, ActixJob, MaxRetries, WorkerConfig};
 use background_jobs_sled_storage::Storage;
 use chrono::{Duration, Utc};
 use std::future::{ready, Ready};
@@ -79,7 +79,7 @@ impl MyJob {
 }
 
 #[async_trait::async_trait]
-impl Job for MyJob {
+impl ActixJob for MyJob {
     type State = MyState;
     type Future = Ready<Result<(), Error>>;
 
@@ -109,7 +109,7 @@ impl Job for MyJob {
 }
 
 #[async_trait::async_trait]
-impl Job for PanickingJob {
+impl ActixJob for PanickingJob {
     type State = MyState;
     type Future = Ready<Result<(), Error>>;
 
