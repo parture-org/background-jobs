@@ -151,7 +151,6 @@ fn job_span(job: &JobInfo) -> Span {
         execution_id = tracing::field::display(&Uuid::new_v4()),
         job.id = tracing::field::display(&job.id()),
         job.name = tracing::field::display(&job.name()),
-        job.args = tracing::field::debug(&job.args()),
         job.execution_time = tracing::field::Empty,
         exception.message = tracing::field::Empty,
         exception.details = tracing::field::Empty,
