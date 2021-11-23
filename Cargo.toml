@@ -26,7 +26,7 @@ completion-logging = ["background-jobs-core/completion-logging", "error-logging"
 error-logging = ["background-jobs-core/error-logging"]
 
 [dependencies.background-jobs-core]
-version = "0.10.0"
+version = "0.11.0"
 path = "jobs-core"
 
 [dependencies.background-jobs-actix]
