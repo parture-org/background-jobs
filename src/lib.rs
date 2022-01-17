@@ -28,10 +28,9 @@
 //! #### Add Background Jobs to your project
 //! ```toml
 //! [dependencies]
-//! actix = "0.8"
-//! background-jobs = "0.6.0"
+//! actix-rt = "2.6.0"
 //! anyhow = "1.0"
-//! futures = "0.1"
+//! background-jobs = "0.12.0"
 //! serde = { version = "1.0", features = ["derive"] }
 //! ```
 //!
@@ -42,7 +41,7 @@
 //! ```rust,ignore
 //! use anyhow::Error;
 //! use background_jobs::Job;
-//! use futures::future::{ok, Ready};
+//! use std::future::{ready, Ready};
 //!
 //! #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 //! pub struct MyJob {
@@ -65,10 +64,10 @@
 //!
 //!     const NAME: &'static str = "MyJob";
 //!
-//!     fn run(self, _: Self::State) -> Self::Future {
-//!         println!("args: {:?}", self);
+//!     fn run(self, state: ()) -> Self::Future {
+//!         info!("{}: args, {:?}", state.app_name, self);
 //!
-//!         ok(())
+//!         ready(Ok(()))
 //!     }
 //! }
 //! ```
@@ -83,7 +82,7 @@
 //! ```rust,ignore
 //! use anyhow::Error;
 //! use background_jobs::Job;
-//! use futures::future::{ok, Ready};
+//! use std::future::{ready, Ready};
 //!
 //! #[derive(Clone, Debug)]
 //! pub struct MyState {
@@ -104,10 +103,10 @@
 //!
 //!     const NAME: &'static str = "MyJob";
 //!
-//!     fn run(self, state: Self::State) -> Self::Future {
+//!     fn run(self, state: MyState) -> Self::Future {
 //!         info!("{}: args, {:?}", state.app_name, self);
 //!
-//!         ok(())
+//!         ready(Ok(()))
 //!     }
 //! }
 //! ```
@@ -133,15 +132,19 @@
 //!     let storage = Storage::new();
 //!
 //!     // Configure and start our workers
-//!     let queue_handle = WorkerConfig::new(move || MyState::new("My App"))
-//!         .register::<MyJob>()
-//!         .set_processor_count(DEFAULT_QUEUE, 16)
-//!         .start(storage);
+//!    let arbiter = Arbiter::new();
+//!
+//!    // Configure and start our workers
+//!    let queue_handle =
+//!        WorkerConfig::new_in_arbiter(arbiter.handle(), storage, |_| MyState::new("My App"))
+//!            .register::<MyJob>()
+//!            .set_worker_count(DEFAULT_QUEUE, 16)
+//!            .start();
 //!
 //!     // Queue our jobs
-//!     queue_handle.queue(MyJob::new(1, 2))?;
-//!     queue_handle.queue(MyJob::new(3, 4))?;
-//!     queue_handle.queue(MyJob::new(5, 6))?;
+//!     queue_handle.queue(MyJob::new(1, 2)).await?;
+//!     queue_handle.queue(MyJob::new(3, 4)).await?;
+//!     queue_handle.queue(MyJob::new(5, 6)).await?;
 //!
 //!     // Block on Actix
 //!     actix_rt::signal::ctrl_c().await?;
@@ -151,7 +154,7 @@
 //!
 //! ##### Complete Example
 //! For the complete example project, see
-//! [the examples folder](https://git.asonix.dog/Aardwolf/background-jobs/src/branch/master/examples/actix-example)
+//! [the examples folder](https://git.asonix.dog/asonix/background-jobs/src/branch/main/examples/actix-example)
 //!
 //! #### Bringing your own server/worker implementation
 //! If you want to create your own jobs processor based on this idea, you can depend on the

@@ -15,8 +15,8 @@
 
 use actix_rt::task::{spawn_blocking, JoinError};
 use background_jobs_core::{JobInfo, Stats};
-use chrono::offset::Utc;
 use sled::{Db, Tree};
+use std::time::SystemTime;
 use uuid::Uuid;
 
 /// The error produced by sled storage calls
@@ -110,7 +110,7 @@ impl background_jobs_core::Storage for Storage {
         Ok(spawn_blocking(move || {
             let mut job;
 
-            let now = Utc::now();
+            let now = SystemTime::now();
 
             while {
                 let job_opt = this

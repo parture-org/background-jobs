@@ -1,7 +1,6 @@
 use crate::{catch_unwind::catch_unwind, Job, JobError, JobInfo, ReturnJobInfo};
-use chrono::Utc;
 use serde_json::Value;
-use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
+use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc, time::Instant};
 use tracing::{error, Span};
 use tracing_futures::Instrument;
 use uuid::Uuid;
@@ -164,7 +163,7 @@ where
     let args = job.args();
     let id = job.id();
 
-    let start = Utc::now();
+    let start = Instant::now();
 
     let state_mtx = std::sync::Mutex::new(state);
     let process_mtx = std::sync::Mutex::new(process_fn);
@@ -176,15 +175,10 @@ where
         Ok(fut) => catch_unwind(fut).await,
         Err(e) => Err(e),
     };
-    let end = Utc::now();
+    let end = Instant::now();
 
     let duration = end - start;
-    let microseconds = duration.num_microseconds();
-    let seconds: f64 = if let Some(m) = microseconds {
-        m as f64 / 1_000_000_f64
-    } else {
-        0_f64
-    };
+    let seconds = duration.as_micros() as f64 / 1_000_000_f64;
 
     let span = Span::current();
     span.record("job.execution_time", &tracing::field::display(&seconds));

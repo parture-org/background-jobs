@@ -11,10 +11,11 @@
 //! used. By default, the number of cores of the running system is used.
 //!
 //! ### Example
-//! ```rust,ignore
+//! ```rust
 //! use anyhow::Error;
-//! use background_jobs::{create_server, Backoff, Job, MaxRetries, WorkerConfig};
-//! use futures::future::{ok, Ready};
+//! use background_jobs_core::{Backoff, Job, MaxRetries};
+//! use background_jobs_actix::WorkerConfig;
+//! use std::future::{ready, Ready};
 //!
 //! const DEFAULT_QUEUE: &'static str = "default";
 //!
@@ -33,7 +34,7 @@
 //! async fn main() -> Result<(), Error> {
 //!     // Set up our Storage
 //!     // For this example, we use the default in-memory storage mechanism
-//!     use background_jobs::memory_storage::Storage;
+//!     use background_jobs_core::memory_storage::Storage;
 //!     let storage = Storage::new();
 //!
 //!     // Configure and start our workers
@@ -43,11 +44,11 @@
 //!         .start();
 //!
 //!     // Queue our jobs
-//!     queue_handle.queue(MyJob::new(1, 2))?;
-//!     queue_handle.queue(MyJob::new(3, 4))?;
-//!     queue_handle.queue(MyJob::new(5, 6))?;
+//!     queue_handle.queue(MyJob::new(1, 2)).await?;
+//!     queue_handle.queue(MyJob::new(3, 4)).await?;
+//!     queue_handle.queue(MyJob::new(5, 6)).await?;
 //!
-//!     actix_rt::signal::ctrl_c().await?;
+//!     // actix_rt::signal::ctrl_c().await?;
 //!
 //!     Ok(())
 //! }
@@ -69,7 +70,6 @@
 //!     }
 //! }
 //!
-//! #[async_trait::async_trait]
 //! impl Job for MyJob {
 //!     type State = MyState;
 //!     type Future = Ready<Result<(), Error>>;
@@ -97,18 +97,18 @@
 //!     //
 //!     // This value defaults to Backoff::Exponential(2)
 //!     // Jobs can optionally override this value
-//!     const BACKOFF_STRATEGY: Backoff = Backoff::Exponential(2);
+//!     const BACKOFF: Backoff = Backoff::Exponential(2);
 //!
 //!     // When should the job be considered dead
 //!     //
 //!     // The timeout defines when a job is allowed to be considered dead, and so can be retried
 //!     // by the job processor. The value is in milliseconds and defaults to 15,000
-//!     const TIMEOUT: i64 = 15_000
+//!     const TIMEOUT: i64 = 15_000;
 //!
-//!     async fn run(self, state: MyState) -> Self::Future {
+//!     fn run(self, state: MyState) -> Self::Future {
 //!         println!("{}: args, {:?}", state.app_name, self);
 //!
-//!         ok(())
+//!         ready(Ok(()))
 //!     }
 //! }
 //! ```
@@ -116,8 +116,13 @@
 use actix_rt::{Arbiter, ArbiterHandle};
 use anyhow::Error;
 use background_jobs_core::{new_job, new_scheduled_job, Job, ProcessorMap, Stats, Storage};
-use chrono::{DateTime, Utc};
-use std::{collections::BTreeMap, marker::PhantomData, ops::Deref, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    marker::PhantomData,
+    ops::Deref,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 mod every;
 mod server;
@@ -459,7 +464,7 @@ impl QueueHandle {
     ///
     /// This job will be sent to the server for storage, and will execute after the specified time
     /// and when a worker for the job's queue is free to do so.
-    pub async fn schedule<J>(&self, job: J, after: DateTime<Utc>) -> Result<(), Error>
+    pub async fn schedule<J>(&self, job: J, after: SystemTime) -> Result<(), Error>
     where
         J: Job,
     {

@@ -1,6 +1,7 @@
 use crate::{Backoff, JobResult, JobStatus, MaxRetries, ShouldStop};
-use chrono::{offset::Utc, DateTime, Duration};
 use serde_json::Value;
+use std::time::SystemTime;
+use time::{Duration, OffsetDateTime};
 use tracing::trace;
 use uuid::Uuid;
 
@@ -53,7 +54,7 @@ pub struct NewJobInfo {
     backoff_strategy: Backoff,
 
     /// The time this job should be dequeued
-    next_queue: Option<DateTime<Utc>>,
+    next_queue: Option<OffsetDateTime>,
 
     /// Milliseconds from execution until the job is considered dead
     ///
@@ -62,8 +63,8 @@ pub struct NewJobInfo {
 }
 
 impl NewJobInfo {
-    pub(crate) fn schedule(&mut self, time: DateTime<Utc>) {
-        self.next_queue = Some(time);
+    pub(crate) fn schedule(&mut self, time: SystemTime) {
+        self.next_queue = Some(time.into());
     }
 
     pub(crate) fn new(
@@ -106,7 +107,7 @@ impl NewJobInfo {
             max_retries: self.max_retries,
             next_queue: self.next_queue,
             backoff_strategy: self.backoff_strategy,
-            updated_at: Utc::now(),
+            updated_at: OffsetDateTime::now_utc(),
             timeout: self.timeout,
         }
     }
@@ -143,10 +144,10 @@ pub struct JobInfo {
     backoff_strategy: Backoff,
 
     /// The time this job should be dequeued
-    next_queue: Option<DateTime<Utc>>,
+    next_queue: Option<OffsetDateTime>,
 
     /// The time this job was last updated
-    updated_at: DateTime<Utc>,
+    updated_at: OffsetDateTime,
 
     /// Milliseconds from execution until the job is considered dead
     ///
@@ -161,7 +162,7 @@ impl JobInfo {
     }
 
     fn updated(&mut self) {
-        self.updated_at = Utc::now();
+        self.updated_at = OffsetDateTime::now_utc();
     }
 
     pub(crate) fn name(&self) -> &str {
@@ -191,8 +192,8 @@ impl JobInfo {
     }
 
     /// If the job is queued to run in the future, when is that
-    pub fn next_queue(&self) -> Option<DateTime<Utc>> {
-        self.next_queue
+    pub fn next_queue(&self) -> Option<SystemTime> {
+        self.next_queue.map(|time| time.into())
     }
 
     pub(crate) fn increment(&mut self) -> ShouldStop {
@@ -202,7 +203,7 @@ impl JobInfo {
     }
 
     fn set_next_queue(&mut self) {
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
 
         let next_queue = match self.backoff_strategy {
             Backoff::Linear(secs) => now + Duration::seconds(secs as i64),
@@ -218,12 +219,12 @@ impl JobInfo {
             "Now {}, Next queue {}, ready {}",
             now,
             next_queue,
-            self.is_ready(now),
+            self.is_ready(now.into()),
         );
     }
 
     /// Whether this job is ready to be run
-    pub fn is_ready(&self, now: DateTime<Utc>) -> bool {
+    pub fn is_ready(&self, now: SystemTime) -> bool {
         match self.next_queue {
             Some(ref time) => now > *time,
             None => true,
@@ -242,7 +243,7 @@ impl JobInfo {
     }
 
     /// Whether this job is pending execution
-    pub fn is_pending(&self, now: DateTime<Utc>) -> bool {
+    pub fn is_pending(&self, now: SystemTime) -> bool {
         self.status == JobStatus::Pending
             || (self.status == JobStatus::Running
                 && (self.updated_at + Duration::milliseconds(self.timeout)) < now)
@@ -254,8 +255,8 @@ impl JobInfo {
     }
 
     /// The the date of the most recent update
-    pub fn updated_at(&self) -> DateTime<Utc> {
-        self.updated_at
+    pub fn updated_at(&self) -> SystemTime {
+        self.updated_at.into()
     }
 
     pub(crate) fn is_in_queue(&self, queue: &str) -> bool {

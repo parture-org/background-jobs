@@ -2,8 +2,10 @@ use actix_rt::Arbiter;
 use anyhow::Error;
 use background_jobs::{ActixJob as Job, MaxRetries, WorkerConfig};
 use background_jobs_sled_storage::Storage;
-use chrono::{Duration, Utc};
-use std::future::{ready, Ready};
+use std::{
+    future::{ready, Ready},
+    time::{Duration, SystemTime},
+};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -46,7 +48,7 @@ async fn main() -> Result<(), Error> {
     queue_handle.queue(MyJob::new(3, 4)).await?;
     queue_handle.queue(MyJob::new(5, 6)).await?;
     queue_handle
-        .schedule(MyJob::new(7, 8), Utc::now() + Duration::seconds(2))
+        .schedule(MyJob::new(7, 8), SystemTime::now() + Duration::from_secs(2))
         .await?;
 
     // Block on Actix
@@ -75,7 +77,6 @@ impl MyJob {
     }
 }
 
-#[async_trait::async_trait]
 impl Job for MyJob {
     type State = MyState;
     type Future = Ready<Result<(), Error>>;

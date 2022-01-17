@@ -1,4 +1,4 @@
-use chrono::{offset::Utc, DateTime, Datelike, Timelike};
+use time::OffsetDateTime;
 
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 /// Statistics about the jobs processor
@@ -67,7 +67,7 @@ pub struct JobStat {
     today: usize,
     this_month: usize,
     all_time: usize,
-    updated_at: DateTime<Utc>,
+    updated_at: OffsetDateTime,
 }
 
 impl JobStat {
@@ -86,7 +86,7 @@ impl JobStat {
     }
 
     fn tick(&mut self) {
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
 
         if now.month() != self.updated_at.month() {
             self.next_month();
@@ -141,7 +141,7 @@ impl Default for JobStat {
             today: 0,
             this_month: 0,
             all_time: 0,
-            updated_at: Utc::now(),
+            updated_at: OffsetDateTime::now_utc(),
         }
     }
 }

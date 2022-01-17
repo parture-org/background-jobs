@@ -1,9 +1,8 @@
 use crate::{Backoff, JobError, MaxRetries, NewJobInfo};
 use anyhow::Error;
-use chrono::{offset::Utc, DateTime};
 use serde::{de::DeserializeOwned, ser::Serialize};
 use serde_json::Value;
-use std::{future::Future, pin::Pin};
+use std::{future::Future, pin::Pin, time::SystemTime};
 use tracing::Span;
 use tracing_futures::Instrument;
 
@@ -148,7 +147,7 @@ where
 }
 
 /// Create a NewJobInfo to schedule a job to be performed after a certain time
-pub fn new_scheduled_job<J>(job: J, after: DateTime<Utc>) -> Result<NewJobInfo, Error>
+pub fn new_scheduled_job<J>(job: J, after: SystemTime) -> Result<NewJobInfo, Error>
 where
     J: Job,
 {

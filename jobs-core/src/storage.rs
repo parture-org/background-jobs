@@ -1,6 +1,5 @@
 use crate::{JobInfo, NewJobInfo, ReturnJobInfo, Stats};
-use chrono::offset::Utc;
-use std::error::Error;
+use std::{error::Error, time::SystemTime};
 use tracing::info;
 use uuid::Uuid;
 
@@ -76,7 +75,7 @@ pub trait Storage: Clone + Send {
     ) -> Result<Option<JobInfo>, Self::Error> {
         match self.fetch_job_from_queue(queue).await? {
             Some(mut job) => {
-                let now = Utc::now();
+                let now = SystemTime::now();
                 if job.is_pending(now) && job.is_ready(now) && job.is_in_queue(queue) {
                     job.run();
                     self.run_job(job.id(), runner_id).await?;
@@ -138,8 +137,7 @@ pub trait Storage: Clone + Send {
 pub mod memory_storage {
     use super::{JobInfo, Stats};
     use async_mutex::Mutex;
-    use chrono::Utc;
-    use std::{collections::HashMap, convert::Infallible, sync::Arc};
+    use std::{collections::HashMap, convert::Infallible, sync::Arc, time::SystemTime};
     use uuid::Uuid;
 
     #[derive(Clone)]
@@ -207,7 +205,7 @@ pub mod memory_storage {
 
         async fn fetch_job_from_queue(&self, queue: &str) -> Result<Option<JobInfo>, Self::Error> {
             let mut inner = self.inner.lock().await;
-            let now = Utc::now();
+            let now = SystemTime::now();
 
             let j = inner
                 .queues

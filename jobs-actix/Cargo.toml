@@ -1,21 +1,20 @@
 [package]
 name = "background-jobs-actix"
 description = "in-process jobs processor based on Actix"
-version = "0.11.0"
+version = "0.12.0"
 license = "AGPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
-repository = "https://git.asonix.dog/Aardwolf/background-jobs"
+repository = "https://git.asonix.dog/asonix/background-jobs"
 keywords = ["jobs", "processor"]
 readme = "../README.md"
 edition = "2021"
 
 [dependencies]
-actix-rt = "2.2.0"
+actix-rt = "2.5.1"
 anyhow = "1.0"
 async-mutex = "1.0.1"
 async-trait = "0.1.24"
-background-jobs-core = { version = "0.11.0", path = "../jobs-core", features = ["with-actix"] }
-chrono = "0.4"
+background-jobs-core = { version = "0.12.0", path = "../jobs-core", features = ["with-actix"] }
 tracing = "0.1"
 tracing-futures = "0.2"
 num_cpus = "1.10.0"
