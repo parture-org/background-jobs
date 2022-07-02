@@ -14,7 +14,7 @@
 //! ```rust
 //! use anyhow::Error;
 //! use background_jobs_core::{Backoff, Job, MaxRetries};
-//! use background_jobs_actix::WorkerConfig;
+//! use background_jobs_actix::{ActixTimer, WorkerConfig};
 //! use std::future::{ready, Ready};
 //!
 //! const DEFAULT_QUEUE: &'static str = "default";
@@ -35,7 +35,7 @@
 //!     // Set up our Storage
 //!     // For this example, we use the default in-memory storage mechanism
 //!     use background_jobs_core::memory_storage::Storage;
-//!     let storage = Storage::new();
+//!     let storage = Storage::new(ActixTimer);
 //!
 //!     // Configure and start our workers
 //!     let queue_handle = WorkerConfig::new(storage, move |_| MyState::new("My App"))
@@ -115,7 +115,9 @@
 
 use actix_rt::{Arbiter, ArbiterHandle};
 use anyhow::Error;
-use background_jobs_core::{new_job, new_scheduled_job, Job, ProcessorMap, Stats, Storage};
+use background_jobs_core::{
+    memory_storage::Timer, new_job, new_scheduled_job, Job, ProcessorMap, Stats, Storage,
+};
 use std::{
     collections::BTreeMap,
     marker::PhantomData,
@@ -132,6 +134,22 @@ mod worker;
 use self::{every::every, server::Server, worker::LocalWorkerStarter};
 
 pub use background_jobs_core::ActixJob;
+
+/// A timer implementation for the Memory Storage backend
+#[derive(Debug, Clone)]
+pub struct ActixTimer;
+
+#[async_trait::async_trait]
+impl Timer for ActixTimer {
+    async fn timeout<F>(&self, duration: Duration, future: F) -> Result<F::Output, ()>
+    where
+        F: std::future::Future + Send + Sync,
+    {
+        actix_rt::time::timeout(duration, future)
+            .await
+            .map_err(|_| ())
+    }
+}
 
 /// Manager for worker threads
 ///

@@ -22,7 +22,7 @@ use sled::{Db, Tree};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 use tokio::sync::Notify;
 use uuid::Uuid;
@@ -114,6 +114,12 @@ impl background_jobs_core::Storage for Storage {
 
     async fn fetch_job_from_queue(&self, queue: &str) -> Result<JobInfo> {
         loop {
+            let notifier = self.notifier(queue.to_owned());
+
+            let notified = notifier.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
             let this = self.clone();
             let queue2 = queue.to_owned();
 
@@ -194,9 +200,10 @@ impl background_jobs_core::Storage for Storage {
             })
             .await?;
 
-            let notifier = self.notifier(queue.to_owned());
-
-            let _ = timeout(duration, notifier.notified()).await;
+            let before = Instant::now();
+            tracing::debug!("Waiting for notification for at most {:?}", duration);
+            let _ = timeout(duration, notified).await;
+            tracing::debug!("Notified after {:?}", before.elapsed());
         }
     }
 

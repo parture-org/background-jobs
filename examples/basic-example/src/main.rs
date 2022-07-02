@@ -1,6 +1,11 @@
 use actix_rt::Arbiter;
 use anyhow::Error;
-use background_jobs::{ActixJob as Job, MaxRetries, WorkerConfig};
+use background_jobs::{
+    // memory_storage::{ActixTimer, Storage},
+    ActixJob as Job,
+    MaxRetries,
+    WorkerConfig,
+};
 use background_jobs_sled_storage::Storage;
 use std::{
     future::{ready, Ready},
@@ -33,6 +38,7 @@ async fn main() -> Result<(), Error> {
     // Set up our Storage
     let db = sled::Config::new().temporary(true).open()?;
     let storage = Storage::new(db)?;
+    // let storage = Storage::new(ActixTimer);
 
     let arbiter = Arbiter::new();
 

@@ -161,7 +161,7 @@
 //! `background-jobs-core` crate, which provides the Job trait, as well as some
 //! other useful types for implementing a jobs processor and job store.
 
-pub use background_jobs_core::{memory_storage, Backoff, Job, JobStat, MaxRetries, Stats};
+pub use background_jobs_core::{Backoff, Job, JobStat, MaxRetries, Stats};
 
 pub mod dev {
     //! Useful types and methods for developing Storage and Processor implementations.
@@ -169,6 +169,13 @@ pub mod dev {
         new_job, new_scheduled_job, process, CachedProcessorMap, JobInfo, NewJobInfo, ProcessorMap,
         ReturnJobInfo, Storage,
     };
+}
+
+pub mod memory_storage {
+    pub use background_jobs_core::memory_storage::{Storage, Timer};
+
+    #[cfg(feature = "background-jobs-actix")]
+    pub use background_jobs_actix::ActixTimer;
 }
 
 #[cfg(feature = "background-jobs-actix")]

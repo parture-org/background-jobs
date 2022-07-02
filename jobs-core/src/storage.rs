@@ -146,7 +146,7 @@ pub mod memory_storage {
         /// Race a future against the clock, returning an empty tuple if the clock wins
         async fn timeout<F>(&self, duration: Duration, future: F) -> Result<F::Output, ()>
         where
-            F: std::future::Future;
+            F: std::future::Future + Send + Sync;
     }
 
     #[derive(Clone)]
