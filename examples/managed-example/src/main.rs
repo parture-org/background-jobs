@@ -53,12 +53,14 @@ async fn main() -> Result<(), Error> {
         .await?;
 
     // Block on Actix
+    tracing::info!("Press CTRL^C to continue");
     actix_rt::signal::ctrl_c().await?;
 
     // kill the current arbiter
     manager.queue(StopJob).await?;
 
     // Block on Actix
+    tracing::info!("Press CTRL^C to continue");
     actix_rt::signal::ctrl_c().await?;
 
     // See that the workers have respawned
@@ -70,6 +72,7 @@ async fn main() -> Result<(), Error> {
         .await?;
 
     // Block on Actix
+    tracing::info!("Press CTRL^C to quit");
     actix_rt::signal::ctrl_c().await?;
 
     drop(manager);

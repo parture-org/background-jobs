@@ -13,10 +13,18 @@
 //! let queue_handle = ServerConfig::new(storage).thread_count(8).start();
 //! ```
 
-use actix_rt::task::{spawn_blocking, JoinError};
+use actix_rt::{
+    task::{spawn_blocking, JoinError},
+    time::timeout,
+};
 use background_jobs_core::{JobInfo, Stats};
 use sled::{Db, Tree};
-use std::time::SystemTime;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::{Duration, SystemTime},
+};
+use tokio::sync::Notify;
 use uuid::Uuid;
 
 /// The error produced by sled storage calls
@@ -47,7 +55,8 @@ pub struct Storage {
     running_inverse: Tree,
     queue: Tree,
     stats: Tree,
-    db: Db,
+    notifiers: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
+    _db: Db,
 }
 
 #[async_trait::async_trait]
@@ -103,18 +112,59 @@ impl background_jobs_core::Storage for Storage {
         .await??)
     }
 
-    async fn fetch_job_from_queue(&self, queue: &str) -> Result<Option<JobInfo>> {
-        let this = self.clone();
-        let queue = queue.to_owned();
+    async fn fetch_job_from_queue(&self, queue: &str) -> Result<JobInfo> {
+        loop {
+            let this = self.clone();
+            let queue2 = queue.to_owned();
 
-        Ok(spawn_blocking(move || {
-            let mut job;
+            let job = spawn_blocking(move || {
+                let queue = queue2;
+                let mut job;
 
-            let now = SystemTime::now();
+                let now = SystemTime::now();
 
-            while {
-                let job_opt = this
-                    .queue
+                while {
+                    let job_opt = this
+                        .queue
+                        .iter()
+                        .filter_map(|res| res.ok())
+                        .filter_map(|(id, in_queue)| {
+                            if queue.as_bytes() == in_queue.as_ref() {
+                                Some(id)
+                            } else {
+                                None
+                            }
+                        })
+                        .filter_map(|id| this.jobinfo.get(id).ok())
+                        .flatten()
+                        .filter_map(|ivec| serde_cbor::from_slice(&ivec).ok())
+                        .find(|job: &JobInfo| job.is_ready(now) && job.is_pending(now));
+
+                    job = if let Some(job) = job_opt {
+                        job
+                    } else {
+                        return Ok(None);
+                    };
+
+                    this.queue.remove(job.id().as_bytes())?.is_none()
+                } {}
+
+                Ok(Some(job)) as Result<Option<JobInfo>>
+            })
+            .await??;
+
+            if let Some(job) = job {
+                return Ok(job);
+            }
+
+            let this = self.clone();
+            let queue2 = queue.to_owned();
+
+            let duration = spawn_blocking(move || {
+                let queue = queue2;
+                let now = SystemTime::now();
+
+                this.queue
                     .iter()
                     .filter_map(|res| res.ok())
                     .filter_map(|(id, in_queue)| {
@@ -127,27 +177,36 @@ impl background_jobs_core::Storage for Storage {
                     .filter_map(|id| this.jobinfo.get(id).ok())
                     .flatten()
                     .filter_map(|ivec| serde_cbor::from_slice(&ivec).ok())
-                    .find(|job: &JobInfo| job.is_ready(now) && job.is_pending(now));
+                    .filter(|job: &JobInfo| !job.is_ready(now) && job.is_pending(now))
+                    .fold(Duration::from_secs(5), |duration, job| {
+                        if let Some(next_queue) = job.next_queue() {
+                            let job_duration = next_queue
+                                .duration_since(now)
+                                .unwrap_or(Duration::from_secs(0));
 
-                job = if let Some(job) = job_opt {
-                    job
-                } else {
-                    return Ok(None);
-                };
+                            if job_duration < duration {
+                                return job_duration;
+                            }
+                        }
 
-                this.queue.remove(job.id().as_bytes())?.is_none()
-            } {}
+                        duration
+                    })
+            })
+            .await?;
 
-            Ok(Some(job)) as Result<Option<JobInfo>>
-        })
-        .await??)
+            let notifier = self.notifier(queue.to_owned());
+
+            let _ = timeout(duration, notifier.notified()).await;
+        }
     }
 
     async fn queue_job(&self, queue: &str, id: Uuid) -> Result<()> {
         let this = self.clone();
-        let queue = queue.to_owned();
+        let queue2 = queue.to_owned();
 
-        Ok(spawn_blocking(move || {
+        spawn_blocking(move || {
+            let queue = queue2;
+
             if let Some(runner_id) = this.running_inverse.remove(id.as_bytes())? {
                 this.running.remove(runner_id)?;
             }
@@ -156,7 +215,11 @@ impl background_jobs_core::Storage for Storage {
 
             Ok(()) as Result<_>
         })
-        .await??)
+        .await??;
+
+        self.notify(queue.to_owned());
+
+        Ok(())
     }
 
     async fn run_job(&self, id: Uuid, runner_id: Uuid) -> Result<()> {
@@ -243,8 +306,27 @@ impl Storage {
             running_inverse: db.open_tree("background-jobs-running-inverse")?,
             queue: db.open_tree("background-jobs-queue")?,
             stats: db.open_tree("background-jobs-stats")?,
-            db,
+            notifiers: Arc::new(Mutex::new(HashMap::new())),
+            _db: db,
         })
+    }
+
+    fn notifier(&self, queue: String) -> Arc<Notify> {
+        self.notifiers
+            .lock()
+            .unwrap()
+            .entry(queue)
+            .or_insert_with(|| Arc::new(Notify::new()))
+            .clone()
+    }
+
+    fn notify(&self, queue: String) {
+        self.notifiers
+            .lock()
+            .unwrap()
+            .entry(queue)
+            .or_insert_with(|| Arc::new(Notify::new()))
+            .notify_one();
     }
 }
 

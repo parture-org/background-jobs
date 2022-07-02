@@ -1,7 +1,7 @@
 [package]
 name = "background-jobs"
 description = "Background Jobs implemented with actix and futures"
-version = "0.12.0"
+version = "0.13.0"
 license = "AGPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/asonix/background-jobs"
@@ -11,25 +11,28 @@ edition = "2021"
 
 [workspace]
 members = [
-    "jobs-actix",
-    "jobs-core",
-    "jobs-sled",
-    "examples/basic-example",
-    "examples/long-example",
-    "examples/managed-example",
-    "examples/panic-example",
+  "jobs-actix",
+  "jobs-core",
+  "jobs-sled",
+  "examples/basic-example",
+  "examples/long-example",
+  "examples/managed-example",
+  "examples/panic-example",
 ]
 
 [features]
 default = ["background-jobs-actix"]
-completion-logging = ["background-jobs-core/completion-logging", "error-logging"]
+completion-logging = [
+  "background-jobs-core/completion-logging",
+  "error-logging",
+]
 error-logging = ["background-jobs-core/error-logging"]
 
 [dependencies.background-jobs-core]
-version = "0.12.0"
+version = "0.13.0"
 path = "jobs-core"
 
 [dependencies.background-jobs-actix]
-version = "0.12.0"
+version = "0.13.0"
 path = "jobs-actix"
 optional = true

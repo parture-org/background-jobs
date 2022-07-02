@@ -6,7 +6,7 @@ use uuid::Uuid;
 pub(crate) trait ActixStorage {
     async fn new_job(&self, job: NewJobInfo) -> Result<Uuid, Error>;
 
-    async fn request_job(&self, queue: &str, runner_id: Uuid) -> Result<Option<JobInfo>, Error>;
+    async fn request_job(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Error>;
 
     async fn return_job(&self, ret: ReturnJobInfo) -> Result<(), Error>;
 
@@ -28,7 +28,7 @@ where
         Ok(self.0.new_job(job).await?)
     }
 
-    async fn request_job(&self, queue: &str, runner_id: Uuid) -> Result<Option<JobInfo>, Error> {
+    async fn request_job(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Error> {
         Ok(self.0.request_job(queue, runner_id).await?)
     }
 

@@ -171,10 +171,6 @@ impl Manager {
             };
 
             loop {
-                worker_config
-                    .queue_handle
-                    .inner
-                    .ticker(arbiter.handle(), drop_notifier.clone());
                 worker_config.start_managed(&arbiter.handle(), &drop_notifier);
 
                 notifier.notified().await;
@@ -252,20 +248,6 @@ impl Drop for DropNotifier {
             notifier.notify_one();
         }
     }
-}
-
-/// Create a new Server
-///
-/// In previous versions of this library, the server itself was run on it's own dedicated threads
-/// and guarded access to jobs via messages. Since we now have futures-aware synchronization
-/// primitives, the Server has become an object that gets shared between client threads.
-fn create_server_in_arbiter<S>(arbiter: ArbiterHandle, storage: S) -> QueueHandle
-where
-    S: Storage + Sync + 'static,
-{
-    let handle = create_server_managed(storage);
-    handle.inner.ticker(arbiter, ());
-    handle
 }
 
 /// Create a new managed Server
@@ -361,7 +343,7 @@ where
         storage: S,
         state_fn: impl Fn(QueueHandle) -> State + Send + Sync + 'static,
     ) -> Self {
-        let queue_handle = create_server_in_arbiter(arbiter.clone(), storage);
+        let queue_handle = create_server_managed(storage);
         let q2 = queue_handle.clone();
 
         WorkerConfig {
