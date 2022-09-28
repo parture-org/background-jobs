@@ -14,7 +14,7 @@ might not be the best experience.
 ```toml
 [dependencies]
 actix-rt = "2.2.0"
-background-jobs = "0.10.0"
+background-jobs = "0.13.0"
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 ```
@@ -133,14 +133,14 @@ use anyhow::Error;
 async fn main() -> Result<(), Error> {
     // Set up our Storage
     // For this example, we use the default in-memory storage mechanism
-    use background_jobs::memory_storage::Storage;
-    let storage = Storage::new();
+    use background_jobs::memory_storage::{ActixTimer, Storage};
+    let storage = Storage::new(ActixTimer);
 
     // Configure and start our workers
-    let queue_handle = WorkerConfig::new(move || MyState::new("My App"))
+    let queue_handle = WorkerConfig::new(storage, move || MyState::new("My App"))
         .register::<MyJob>()
         .set_worker_count(DEFAULT_QUEUE, 16)
-        .start(storage);
+        .start();
 
     // Queue our jobs
     queue_handle.queue(MyJob::new(1, 2))?;
@@ -166,7 +166,7 @@ Feel free to open issues for anything you find an issue with. Please note that a
 
 ### License
 
-Copyright © 2021 Riley Trautman
+Copyright © 2022 Riley Trautman
 
 background-jobs is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
