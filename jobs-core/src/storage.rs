@@ -258,11 +258,7 @@ pub mod memory_storage {
 
                     self.timer.timeout(
                         duration,
-                        inner
-                            .queues
-                            .entry(queue.to_string())
-                            .or_insert(Event::new())
-                            .listen(),
+                        inner.queues.entry(queue.to_string()).or_default().listen(),
                     )
                 };
 
@@ -275,11 +271,7 @@ pub mod memory_storage {
 
             inner.job_queues.insert(id, queue.to_owned());
 
-            inner
-                .queues
-                .entry(queue.to_string())
-                .or_insert(Event::new())
-                .notify(1);
+            inner.queues.entry(queue.to_string()).or_default().notify(1);
 
             Ok(())
         }

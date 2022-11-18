@@ -5,7 +5,7 @@ use time::{Duration, OffsetDateTime};
 use tracing::trace;
 use uuid::Uuid;
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 /// Information about the sate of an attempted job
 pub struct ReturnJobInfo {
     pub(crate) id: Uuid,
@@ -35,7 +35,7 @@ impl ReturnJobInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 /// Information about a newly created job
 pub struct NewJobInfo {
     /// Name of the job
@@ -113,7 +113,7 @@ impl NewJobInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 /// Metadata pertaining to a job that exists within the background_jobs system
 ///
 /// Although exposed publically, this type should only really be handled by the library itself, and
