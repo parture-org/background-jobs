@@ -58,10 +58,10 @@ impl Server {
     }
 
     pub(crate) async fn return_job(&self, job: ReturnJobInfo) -> Result<(), Error> {
-        Ok(self.storage.return_job(job).await?)
+        self.storage.return_job(job).await
     }
 
     pub(crate) async fn get_stats(&self) -> Result<Stats, Error> {
-        Ok(self.storage.get_stats().await?)
+        self.storage.get_stats().await
     }
 }
