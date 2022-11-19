@@ -68,7 +68,7 @@ pub trait Storage: Clone + Send {
                 self.run_job(job.id(), runner_id).await?;
                 self.save_job(job.clone()).await?;
 
-                metrics::gauge!("background-jobs.job.running", 1.0, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                metrics::counter!("background-jobs.job.started", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
 
                 return Ok(job);
             } else {
@@ -90,13 +90,13 @@ pub trait Storage: Clone + Send {
             if let Some(mut job) = self.fetch_job(id).await? {
                 if job.needs_retry() {
                     metrics::counter!("background-jobs.job.failed", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
-                    metrics::gauge!("background-jobs.job.running", -1.0, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                    metrics::counter!("background-jobs.job.finished", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
 
                     self.queue_job(job.queue(), id).await?;
                     self.save_job(job).await
                 } else {
                     metrics::counter!("background-jobs.job.dead", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
-                    metrics::gauge!("background-jobs.job.running", -1.0, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                    metrics::counter!("background-jobs.job.finished", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
 
                     #[cfg(feature = "error-logging")]
                     tracing::warn!("Job {} failed permanently", id);
@@ -111,7 +111,7 @@ pub trait Storage: Clone + Send {
         } else if result.is_unregistered() || result.is_unexecuted() {
             if let Some(mut job) = self.fetch_job(id).await? {
                 metrics::counter!("background-jobs.job.returned", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
-                metrics::gauge!("background-jobs.job.running", -1.0, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                metrics::counter!("background-jobs.job.finished", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
 
                 job.pending();
                 self.queue_job(job.queue(), id).await?;
@@ -124,7 +124,7 @@ pub trait Storage: Clone + Send {
         } else {
             if let Some(job) = self.fetch_job(id).await? {
                 metrics::counter!("background-jobs.job.completed", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
-                metrics::gauge!("background-jobs.job.running", -1.0, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                metrics::counter!("background-jobs.job.finished", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
             } else {
                 tracing::warn!("Returned non-existant job");
                 metrics::counter!("background-jobs.job.missing", 1);
