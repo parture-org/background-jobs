@@ -1,7 +1,7 @@
 [package]
 name = "background-jobs"
 description = "Background Jobs implemented with actix and futures"
-version = "0.13.0"
+version = "0.14.0"
 license = "AGPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/asonix/background-jobs"
@@ -29,10 +29,10 @@ completion-logging = [
 error-logging = ["background-jobs-core/error-logging"]
 
 [dependencies.background-jobs-core]
-version = "0.13.0"
+version = "0.14.0"
 path = "jobs-core"
 
 [dependencies.background-jobs-actix]
-version = "0.13.0"
+version = "0.14.0"
 path = "jobs-actix"
 optional = true

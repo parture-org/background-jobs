@@ -30,7 +30,7 @@
 //! [dependencies]
 //! actix-rt = "2.6.0"
 //! anyhow = "1.0"
-//! background-jobs = "0.12.0"
+//! background-jobs = "0.14.0"
 //! serde = { version = "1.0", features = ["derive"] }
 //! ```
 //!
@@ -161,7 +161,7 @@
 //! `background-jobs-core` crate, which provides the Job trait, as well as some
 //! other useful types for implementing a jobs processor and job store.
 
-pub use background_jobs_core::{Backoff, Job, JobStat, MaxRetries, Stats};
+pub use background_jobs_core::{Backoff, Job, MaxRetries};
 
 pub mod dev {
     //! Useful types and methods for developing Storage and Processor implementations.
