@@ -67,7 +67,7 @@ struct LocalWorkerStarter<State: Clone + 'static, Extras: 'static> {
 
 impl<State: Clone + 'static, Extras: 'static> Drop for LocalWorkerStarter<State, Extras> {
     fn drop(&mut self) {
-        metrics::gauge!("background-jobs.worker.running", -1.0, "queue" => self.queue.clone());
+        metrics::counter!("background-jobs.worker.finished", 1, "queue" => self.queue.clone());
 
         let res = std::panic::catch_unwind(|| actix_rt::Arbiter::current().spawn(async move {}));
 
@@ -136,7 +136,7 @@ pub(crate) async fn local_worker<State, Extras>(
     State: Clone + 'static,
     Extras: 'static,
 {
-    metrics::gauge!("background-jobs.worker.running", 1.0, "queue" => queue.clone());
+    metrics::counter!("background-jobs.worker.started", 1, "queue" => queue.clone());
 
     let starter = LocalWorkerStarter {
         queue: queue.clone(),
