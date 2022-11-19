@@ -17,7 +17,7 @@ use actix_rt::{
     task::{spawn_blocking, JoinError},
     time::timeout,
 };
-use background_jobs_core::{JobInfo, Stats};
+use background_jobs_core::JobInfo;
 use sled::{Db, Tree};
 use std::{
     collections::HashMap,
@@ -54,7 +54,6 @@ pub struct Storage {
     running: Tree,
     running_inverse: Tree,
     queue: Tree,
-    stats: Tree,
     notifiers: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
     _db: Db,
 }
@@ -259,48 +258,6 @@ impl background_jobs_core::Storage for Storage {
         })
         .await??)
     }
-
-    async fn get_stats(&self) -> Result<Stats> {
-        let this = self.clone();
-
-        let stats = spawn_blocking(move || {
-            let stats = if let Some(stats_ivec) = this.stats.get("stats")? {
-                bincode::deserialize(&stats_ivec).unwrap_or_default()
-            } else {
-                Stats::default()
-            };
-
-            Ok(stats) as Result<Stats>
-        })
-        .await??;
-
-        Ok(stats)
-    }
-
-    async fn update_stats<F>(&self, f: F) -> Result<()>
-    where
-        F: Fn(Stats) -> Stats + Send + 'static,
-    {
-        let this = self.clone();
-
-        Ok(spawn_blocking(move || {
-            this.stats.fetch_and_update("stats", move |opt| {
-                let stats = if let Some(stats_ivec) = opt {
-                    bincode::deserialize(stats_ivec).unwrap_or_default()
-                } else {
-                    Stats::default()
-                };
-
-                let new_stats = (f)(stats);
-
-                let stats_vec = bincode::serialize(&new_stats).ok()?;
-                Some(stats_vec)
-            })?;
-
-            Ok(()) as Result<()>
-        })
-        .await??)
-    }
 }
 
 impl Storage {
@@ -312,7 +269,6 @@ impl Storage {
             running: db.open_tree("background-jobs-running")?,
             running_inverse: db.open_tree("background-jobs-running-inverse")?,
             queue: db.open_tree("background-jobs-queue")?,
-            stats: db.open_tree("background-jobs-stats")?,
             notifiers: Arc::new(Mutex::new(HashMap::new())),
             _db: db,
         })
