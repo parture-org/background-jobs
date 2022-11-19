@@ -14,14 +14,12 @@ mod catch_unwind;
 mod job;
 mod job_info;
 mod processor_map;
-mod stats;
 mod storage;
 
 pub use crate::{
     job::{new_job, new_scheduled_job, process, Job},
     job_info::{JobInfo, NewJobInfo, ReturnJobInfo},
     processor_map::{CachedProcessorMap, ProcessorMap},
-    stats::{JobStat, Stats},
     storage::{memory_storage, Storage},
 };
 

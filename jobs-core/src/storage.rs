@@ -1,6 +1,5 @@
-use crate::{JobInfo, NewJobInfo, ReturnJobInfo, Stats};
+use crate::{JobInfo, NewJobInfo, ReturnJobInfo};
 use std::{error::Error, time::SystemTime};
-use tracing::warn;
 use uuid::Uuid;
 
 /// Define a storage backend for jobs
@@ -44,25 +43,16 @@ pub trait Storage: Clone + Send {
     /// This happens when a job has been completed or has failed too many times
     async fn delete_job(&self, id: Uuid) -> Result<(), Self::Error>;
 
-    /// This method returns the current statistics, or Stats::default() if none exists.
-    async fn get_stats(&self) -> Result<Stats, Self::Error>;
-
-    /// This method fetches the existing statistics or Stats::default(), and stores the result of
-    /// calling `update_stats` on it.
-    async fn update_stats<F>(&self, f: F) -> Result<(), Self::Error>
-    where
-        F: Fn(Stats) -> Stats + Send + 'static;
-
     /// Generate a new job based on the provided NewJobInfo
     async fn new_job(&self, job: NewJobInfo) -> Result<Uuid, Self::Error> {
         let id = self.generate_id().await?;
 
         let job = job.with_id(id);
+        metrics::counter!("background-jobs.job.created", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
 
         let queue = job.queue().to_owned();
         self.save_job(job).await?;
         self.queue_job(&queue, id).await?;
-        self.update_stats(Stats::new_job).await?;
 
         Ok(id)
     }
@@ -77,11 +67,12 @@ pub trait Storage: Clone + Send {
                 job.run();
                 self.run_job(job.id(), runner_id).await?;
                 self.save_job(job.clone()).await?;
-                self.update_stats(Stats::run_job).await?;
+
+                metrics::gauge!("background-jobs.job.running", 1.0, "queue" => job.queue().to_string(), "name" => job.name().to_string());
 
                 return Ok(job);
             } else {
-                warn!(
+                tracing::warn!(
                     "Not fetching job {}, it is not ready for processing",
                     job.id()
                 );
@@ -98,38 +89,55 @@ pub trait Storage: Clone + Send {
         if result.is_failure() {
             if let Some(mut job) = self.fetch_job(id).await? {
                 if job.needs_retry() {
+                    metrics::counter!("background-jobs.job.failed", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                    metrics::gauge!("background-jobs.job.running", -1.0, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+
                     self.queue_job(job.queue(), id).await?;
-                    self.save_job(job).await?;
-                    self.update_stats(Stats::retry_job).await
+                    self.save_job(job).await
                 } else {
+                    metrics::counter!("background-jobs.job.dead", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                    metrics::gauge!("background-jobs.job.running", -1.0, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+
                     #[cfg(feature = "error-logging")]
                     tracing::warn!("Job {} failed permanently", id);
 
-                    self.delete_job(id).await?;
-                    self.update_stats(Stats::fail_job).await
+                    self.delete_job(id).await
                 }
             } else {
+                tracing::warn!("Returned non-existant job");
+                metrics::counter!("background-jobs.job.missing", 1);
                 Ok(())
             }
         } else if result.is_unregistered() || result.is_unexecuted() {
             if let Some(mut job) = self.fetch_job(id).await? {
+                metrics::counter!("background-jobs.job.returned", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                metrics::gauge!("background-jobs.job.running", -1.0, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+
                 job.pending();
                 self.queue_job(job.queue(), id).await?;
-                self.save_job(job).await?;
-                self.update_stats(Stats::retry_job).await
+                self.save_job(job).await
             } else {
+                tracing::warn!("Returned non-existant job");
+                metrics::counter!("background-jobs.job.missing", 1);
                 Ok(())
             }
         } else {
-            self.delete_job(id).await?;
-            self.update_stats(Stats::complete_job).await
+            if let Some(job) = self.fetch_job(id).await? {
+                metrics::counter!("background-jobs.job.completed", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                metrics::gauge!("background-jobs.job.running", -1.0, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+            } else {
+                tracing::warn!("Returned non-existant job");
+                metrics::counter!("background-jobs.job.missing", 1);
+            }
+
+            self.delete_job(id).await
         }
     }
 }
 
 /// A default, in-memory implementation of a storage mechanism
 pub mod memory_storage {
-    use super::{JobInfo, Stats};
+    use super::JobInfo;
     use event_listener::Event;
     use std::{
         collections::HashMap,
@@ -162,7 +170,6 @@ pub mod memory_storage {
         job_queues: HashMap<Uuid, String>,
         worker_ids: HashMap<Uuid, Uuid>,
         worker_ids_inverse: HashMap<Uuid, Uuid>,
-        stats: Stats,
     }
 
     impl<T: Timer> Storage<T> {
@@ -175,7 +182,6 @@ pub mod memory_storage {
                     job_queues: HashMap::new(),
                     worker_ids: HashMap::new(),
                     worker_ids_inverse: HashMap::new(),
-                    stats: Stats::default(),
                 })),
                 timer,
             }
@@ -291,20 +297,6 @@ pub mod memory_storage {
             if let Some(worker_id) = inner.worker_ids.remove(&id) {
                 inner.worker_ids_inverse.remove(&worker_id);
             }
-            Ok(())
-        }
-
-        async fn get_stats(&self) -> Result<Stats, Self::Error> {
-            Ok(self.inner.lock().unwrap().stats.clone())
-        }
-
-        async fn update_stats<F>(&self, f: F) -> Result<(), Self::Error>
-        where
-            F: Fn(Stats) -> Stats + Send,
-        {
-            let mut inner = self.inner.lock().unwrap();
-
-            inner.stats = (f)(inner.stats.clone());
             Ok(())
         }
     }

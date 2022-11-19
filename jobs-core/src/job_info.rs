@@ -2,7 +2,6 @@ use crate::{Backoff, JobResult, JobStatus, MaxRetries, ShouldStop};
 use serde_json::Value;
 use std::time::SystemTime;
 use time::{Duration, OffsetDateTime};
-use tracing::trace;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -215,7 +214,7 @@ impl JobInfo {
 
         self.next_queue = Some(next_queue);
 
-        trace!(
+        tracing::trace!(
             "Now {}, Next queue {}, ready {}",
             now,
             next_queue,

@@ -1,7 +1,7 @@
 use crate::{catch_unwind::catch_unwind, Job, JobError, JobInfo, ReturnJobInfo};
 use serde_json::Value;
 use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc, time::Instant};
-use tracing::{error, Span};
+use tracing::Span;
 use tracing_futures::Instrument;
 use uuid::Uuid;
 
@@ -98,7 +98,7 @@ where
                     "exception.details",
                     &tracing::field::display("Not registered"),
                 );
-                error!("Not registered");
+                tracing::error!("Not registered");
                 ReturnJobInfo::unregistered(job.id())
             };
 
@@ -133,7 +133,7 @@ where
                     "exception.details",
                     &tracing::field::display("Not registered"),
                 );
-                error!("Not registered");
+                tracing::error!("Not registered");
                 ReturnJobInfo::unregistered(job.id())
             };
 
@@ -175,13 +175,12 @@ where
         Ok(fut) => catch_unwind(fut).await,
         Err(e) => Err(e),
     };
-    let end = Instant::now();
-
-    let duration = end - start;
+    let duration = start.elapsed();
     let seconds = duration.as_micros() as f64 / 1_000_000_f64;
 
     let span = Span::current();
     span.record("job.execution_time", &tracing::field::display(&seconds));
+    metrics::histogram!("background-jobs.job.execution_time", seconds, "queue" => job.queue().to_string(), "name" => job.name().to_string());
 
     match res {
         Ok(Ok(_)) => {
