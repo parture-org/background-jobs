@@ -116,22 +116,24 @@
 use actix_rt::{Arbiter, ArbiterHandle};
 use anyhow::Error;
 use background_jobs_core::{
-    memory_storage::Timer, new_job, new_scheduled_job, Job, ProcessorMap, Stats, Storage,
+    memory_storage::Timer, new_job, new_scheduled_job, Job, ProcessorMap, Storage,
 };
 use std::{
     collections::BTreeMap,
     marker::PhantomData,
+    num::NonZeroUsize,
     ops::Deref,
     sync::Arc,
     time::{Duration, SystemTime},
 };
+use tokio::sync::Notify;
 
 mod every;
 mod server;
 mod storage;
 mod worker;
 
-use self::{every::every, server::Server, worker::LocalWorkerStarter};
+use self::{every::every, server::Server};
 
 pub use background_jobs_core::ActixJob;
 
@@ -153,17 +155,14 @@ impl Timer for ActixTimer {
 
 /// Manager for worker threads
 ///
-/// Manager attempts to restart workers as their arbiters die
+/// Manager attempts to restart workers as their arbiters die. Dropping the manager kills the
+/// workers
 pub struct Manager {
     // the manager arbiter
-    arbiter_dropper: Option<ArbiterDropper>,
+    arbiter: Option<Arbiter>,
 
     // handle for queueing
     queue_handle: QueueHandle,
-}
-
-struct ArbiterDropper {
-    arbiter: Option<Arbiter>,
 }
 
 impl Manager {
@@ -171,47 +170,46 @@ impl Manager {
     ///
     /// Manager works by startinng a new Arbiter to run jobs, and if that arbiter ever dies, it
     /// spins up another one and spawns the workers again
-    fn new<State>(worker_config: WorkerConfig<State, Managed>) -> Self
+    fn new<State>(worker_config: WorkerConfig<State, Managed>, thread_count: NonZeroUsize) -> Self
     where
         State: Clone,
     {
         let manager_arbiter = Arbiter::new();
-        let worker_arbiter = Arbiter::new();
-        let notifier = Arc::new(tokio::sync::Notify::new());
-
         let queue_handle = worker_config.queue_handle.clone();
 
-        let drop_notifier = DropNotifier::new(Arc::clone(&notifier));
-        manager_arbiter.spawn(async move {
-            let mut drop_notifier = drop_notifier;
-            let mut arbiter_dropper = ArbiterDropper::from(worker_arbiter);
+        for i in 0..thread_count.into() {
+            let worker_config = worker_config.clone();
 
-            loop {
-                let notified = notifier.notified();
-                worker_config.start_managed(&arbiter_dropper.handle(), &drop_notifier);
+            manager_arbiter.spawn(async move {
+                let mut worker_arbiter = Arbiter::new();
 
-                notified.await;
-                tracing::warn!("Recovering from dead worker arbiter");
-                // drop_notifier needs to live at least as long as notifier.notified().await
-                // in order to ensure we get notified by ticker or a worker, and not ourselves
-                drop(drop_notifier);
+                loop {
+                    let notifier = DropNotifier::default();
+                    worker_config.start_managed(&worker_arbiter.handle(), &());
 
-                // Assume arbiter is dead if we were notified
-                let online = arbiter_dropper.spawn(async {});
-                if online {
-                    panic!("Arbiter should be dead by now");
+                    let notified = notifier.notify.notified();
+
+                    let drop_notifier = notifier.clone();
+                    worker_arbiter.spawn(async move {
+                        std::future::pending::<()>().await;
+                        drop(drop_notifier);
+                    });
+
+                    notified.await;
+
+                    metrics::counter!("background-jobs.worker-arbiter.restart", 1, "number" => i.to_string());
+                    tracing::warn!("Recovering from dead worker arbiter");
+
+                    worker_arbiter.stop();
+                    let _ = worker_arbiter.join();
+
+                    worker_arbiter = Arbiter::new();
                 }
-
-                drop(arbiter_dropper);
-
-                arbiter_dropper = ArbiterDropper::default();
-
-                drop_notifier = DropNotifier::new(Arc::clone(&notifier));
-            }
-        });
+            });
+        }
 
         Manager {
-            arbiter_dropper: Some(ArbiterDropper::from(manager_arbiter)),
+            arbiter: Some(manager_arbiter),
             queue_handle,
         }
     }
@@ -233,61 +231,21 @@ impl Deref for Manager {
 impl Drop for Manager {
     fn drop(&mut self) {
         tracing::warn!("Dropping manager, tearing down workers");
-        self.arbiter_dropper.take();
-    }
-}
-
-impl Deref for ArbiterDropper {
-    type Target = Arbiter;
-
-    fn deref(&self) -> &Self::Target {
-        self.arbiter.as_ref().unwrap()
-    }
-}
-
-impl Drop for ArbiterDropper {
-    fn drop(&mut self) {
-        tracing::warn!("Stopping and joining arbiter");
-        let arbiter = self.arbiter.take().unwrap();
-        arbiter.stop();
-        let _ = arbiter.join();
-    }
-}
-
-impl From<Arbiter> for ArbiterDropper {
-    fn from(arbiter: Arbiter) -> Self {
-        Self {
-            arbiter: Some(arbiter),
+        if let Some(arbiter) = self.arbiter.take() {
+            arbiter.stop();
+            let _ = arbiter.join();
         }
     }
 }
 
-impl Default for ArbiterDropper {
-    fn default() -> Self {
-        ArbiterDropper {
-            arbiter: Some(Arbiter::new()),
-        }
-    }
-}
-
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct DropNotifier {
-    inner: Arc<std::sync::Mutex<Option<Arc<tokio::sync::Notify>>>>,
-}
-
-impl DropNotifier {
-    fn new(notify: Arc<tokio::sync::Notify>) -> Self {
-        DropNotifier {
-            inner: Arc::new(std::sync::Mutex::new(Some(notify))),
-        }
-    }
+    notify: Arc<Notify>,
 }
 
 impl Drop for DropNotifier {
     fn drop(&mut self) {
-        if let Some(notifier) = self.inner.lock().unwrap().take() {
-            notifier.notify_waiters();
-        }
+        self.notify.notify_waiters();
     }
 }
 
@@ -306,8 +264,10 @@ where
 }
 
 /// Marker type for Unmanaged workers
+#[derive(Clone)]
 pub struct Unmanaged;
 /// Marker type for Managed workers
+#[derive(Clone)]
 pub struct Managed;
 
 /// Worker Configuration
@@ -352,9 +312,14 @@ where
         }
     }
 
-    /// Start the workers on a managed arbiter, and return the manager struct
+    /// Start the workers on a managed thread, returning the manager struct
     pub fn start(self) -> Manager {
-        Manager::new(self)
+        Self::start_with_threads(self, NonZeroUsize::try_from(1).expect("nonzero"))
+    }
+
+    /// Start the workers on the specified number of managed threads, returning the Manager struct
+    pub fn start_with_threads(self, thread_count: NonZeroUsize) -> Manager {
+        Manager::new(self, thread_count)
     }
 }
 
@@ -448,7 +413,7 @@ where
                 let extras_2 = extras.clone();
 
                 arbiter.spawn_fn(move || {
-                    drop(LocalWorkerStarter::new(
+                    actix_rt::spawn(worker::local_worker(
                         queue,
                         processors.cached(),
                         server,
@@ -505,10 +470,5 @@ impl QueueHandle {
         J: Job + Clone + Send + 'static,
     {
         actix_rt::spawn(every(self.clone(), duration, job));
-    }
-
-    /// Return an overview of the processor's statistics
-    pub async fn get_stats(&self) -> Result<Stats, Error> {
-        self.inner.get_stats().await
     }
 }

@@ -3,7 +3,7 @@ use std::future::Future;
 use crate::Server;
 use background_jobs_core::{CachedProcessorMap, JobInfo};
 use tokio::sync::mpsc::{channel, Sender};
-use tracing::{error, info, warn, Span};
+use tracing::Span;
 use tracing_futures::Instrument;
 use uuid::Uuid;
 
@@ -42,7 +42,7 @@ impl Worker for LocalWorkerHandle {
     async fn process(&self, job: JobInfo) -> Result<(), JobInfo> {
         match self.tx.clone().send(job).await {
             Err(e) => {
-                error!("Unable to send job");
+                tracing::error!("Unable to send job");
                 Err(e.0)
             }
             _ => Ok(()),
@@ -58,31 +58,17 @@ impl Worker for LocalWorkerHandle {
     }
 }
 
-pub(crate) struct LocalWorkerStarter<State: Clone + 'static, Extras: 'static> {
+struct LocalWorkerStarter<State: Clone + 'static, Extras: 'static> {
     queue: String,
     processors: CachedProcessorMap<State>,
     server: Server,
     extras: Option<Extras>,
 }
 
-impl<State: Clone + 'static, Extras: 'static> LocalWorkerStarter<State, Extras> {
-    pub(super) fn new(
-        queue: String,
-        processors: CachedProcessorMap<State>,
-        server: Server,
-        extras: Extras,
-    ) -> Self {
-        LocalWorkerStarter {
-            queue,
-            processors,
-            server,
-            extras: Some(extras),
-        }
-    }
-}
-
 impl<State: Clone + 'static, Extras: 'static> Drop for LocalWorkerStarter<State, Extras> {
     fn drop(&mut self) {
+        metrics::gauge!("background-jobs.worker.running", -1.0, "queue" => self.queue.clone());
+
         let res = std::panic::catch_unwind(|| actix_rt::Arbiter::current().spawn(async move {}));
 
         let extras = self.extras.take().unwrap();
@@ -95,7 +81,7 @@ impl<State: Clone + 'static, Extras: 'static> Drop for LocalWorkerStarter<State,
                 extras,
             ));
         } else {
-            warn!("Not restarting worker, Arbiter is dead");
+            tracing::warn!("Not restarting worker, Arbiter is dead");
             drop(extras);
         }
     }
@@ -110,7 +96,7 @@ where
     F: Fn() -> Span,
 {
     fn drop(&mut self) {
-        (self.0)().in_scope(|| info!("Worker closing"));
+        (self.0)().in_scope(|| tracing::info!("Worker closing"));
     }
 }
 
@@ -127,21 +113,21 @@ async fn time_job<F: Future + Unpin>(mut future: F, job_id: Uuid) -> <F as Futur
 
                 if count > (60 * 60) {
                     if count % (60 * 20) == 0 {
-                        warn!("Job {} is taking a long time: {} hours", job_id, count / 60 / 60);
+                        tracing::warn!("Job {} is taking a long time: {} hours", job_id, count / 60 / 60);
                     }
                 } else if count > 60 {
                     if count % 20 == 0 {
-                        warn!("Job {} is taking a long time: {} minutes", job_id, count / 60);
+                        tracing::warn!("Job {} is taking a long time: {} minutes", job_id, count / 60);
                     }
                 } else {
-                    info!("Job {} is taking a long time: {} seconds", job_id, count);
+                    tracing::info!("Job {} is taking a long time: {} seconds", job_id, count);
                 }
             }
         }
     }
 }
 
-async fn local_worker<State, Extras>(
+pub(crate) async fn local_worker<State, Extras>(
     queue: String,
     processors: CachedProcessorMap<State>,
     server: Server,
@@ -150,6 +136,8 @@ async fn local_worker<State, Extras>(
     State: Clone + 'static,
     Extras: 'static,
 {
+    metrics::gauge!("background-jobs.worker.running", 1.0, "queue" => queue.clone());
+
     let starter = LocalWorkerStarter {
         queue: queue.clone(),
         processors: processors.clone(),
@@ -171,11 +159,13 @@ async fn local_worker<State, Extras>(
             .instrument(span.clone())
             .await
         {
+            metrics::counter!("background-jobs.worker.failed-request", 1);
+
             let display = format!("{}", e);
             let debug = format!("{:?}", e);
             span.record("exception.message", &tracing::field::display(&display));
             span.record("exception.details", &tracing::field::display(&debug));
-            span.in_scope(|| error!("Failed to notify server of ready worker, {}", e));
+            span.in_scope(|| tracing::error!("Failed to notify server of ready worker, {}", e));
             break;
         }
         drop(span);
@@ -188,11 +178,13 @@ async fn local_worker<State, Extras>(
 
             let span = handle.span("return");
             if let Err(e) = server.return_job(return_job).instrument(span.clone()).await {
+                metrics::counter!("background-jobs.worker.failed-return", 1);
+
                 let display = format!("{}", e);
                 let debug = format!("{:?}", e);
                 span.record("exception.message", &tracing::field::display(&display));
                 span.record("exception.details", &tracing::field::display(&debug));
-                span.in_scope(|| warn!("Failed to return completed job, {}", e));
+                span.in_scope(|| tracing::warn!("Failed to return completed job, {}", e));
             }
 
             continue;

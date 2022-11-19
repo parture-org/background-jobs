@@ -3,7 +3,7 @@ use crate::{
     worker::Worker,
 };
 use anyhow::Error;
-use background_jobs_core::{NewJobInfo, ReturnJobInfo, Stats, Storage};
+use background_jobs_core::{NewJobInfo, ReturnJobInfo, Storage};
 use std::sync::Arc;
 use tracing::{error, trace};
 
@@ -59,9 +59,5 @@ impl Server {
 
     pub(crate) async fn return_job(&self, job: ReturnJobInfo) -> Result<(), Error> {
         self.storage.return_job(job).await
-    }
-
-    pub(crate) async fn get_stats(&self) -> Result<Stats, Error> {
-        self.storage.get_stats().await
     }
 }

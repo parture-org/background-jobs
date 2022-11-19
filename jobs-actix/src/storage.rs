@@ -1,5 +1,5 @@
 use anyhow::Error;
-use background_jobs_core::{JobInfo, NewJobInfo, ReturnJobInfo, Stats, Storage};
+use background_jobs_core::{JobInfo, NewJobInfo, ReturnJobInfo, Storage};
 use uuid::Uuid;
 
 #[async_trait::async_trait]
@@ -9,8 +9,6 @@ pub(crate) trait ActixStorage {
     async fn request_job(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Error>;
 
     async fn return_job(&self, ret: ReturnJobInfo) -> Result<(), Error>;
-
-    async fn get_stats(&self) -> Result<Stats, Error>;
 }
 
 pub(crate) struct StorageWrapper<S>(pub(crate) S)
@@ -34,9 +32,5 @@ where
 
     async fn return_job(&self, ret: ReturnJobInfo) -> Result<(), Error> {
         Ok(self.0.return_job(ret).await?)
-    }
-
-    async fn get_stats(&self) -> Result<Stats, Error> {
-        Ok(self.0.get_stats().await?)
     }
 }
