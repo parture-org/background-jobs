@@ -181,7 +181,7 @@ impl Manager {
             let worker_config = worker_config.clone();
 
             manager_arbiter.spawn(async move {
-                let mut worker_arbiter = Arbiter::new();
+                let mut worker_arbiter = ArbiterDropper::new();
 
                 loop {
                     let notifier = DropNotifier::default();
@@ -200,10 +200,9 @@ impl Manager {
                     metrics::counter!("background-jobs.worker-arbiter.restart", 1, "number" => i.to_string());
                     tracing::warn!("Recovering from dead worker arbiter");
 
-                    worker_arbiter.stop();
-                    let _ = worker_arbiter.join();
+                    drop(worker_arbiter);
 
-                    worker_arbiter = Arbiter::new();
+                    worker_arbiter = ArbiterDropper::new();
                 }
             });
         }
@@ -246,6 +245,34 @@ struct DropNotifier {
 impl Drop for DropNotifier {
     fn drop(&mut self) {
         self.notify.notify_waiters();
+    }
+}
+
+struct ArbiterDropper {
+    arbiter: Option<Arbiter>,
+}
+
+impl ArbiterDropper {
+    fn new() -> Self {
+        Self {
+            arbiter: Some(Arbiter::new()),
+        }
+    }
+}
+
+impl Deref for ArbiterDropper {
+    type Target = Arbiter;
+
+    fn deref(&self) -> &Self::Target {
+        self.arbiter.as_ref().unwrap()
+    }
+}
+
+impl Drop for ArbiterDropper {
+    fn drop(&mut self) {
+        let arbiter = self.arbiter.take().unwrap();
+        arbiter.stop();
+        let _ = arbiter.join();
     }
 }
 
