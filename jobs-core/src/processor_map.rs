@@ -1,6 +1,9 @@
 use crate::{catch_unwind::catch_unwind, Job, JobError, JobInfo, ReturnJobInfo};
 use serde_json::Value;
-use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc, time::Instant};
+use std::{
+    collections::HashMap, future::Future, panic::AssertUnwindSafe, pin::Pin, sync::Arc,
+    time::Instant,
+};
 use tracing::Span;
 use tracing_futures::Instrument;
 use uuid::Uuid;
@@ -165,13 +168,7 @@ where
 
     let start = Instant::now();
 
-    let state_mtx = std::sync::Mutex::new(state);
-    let process_mtx = std::sync::Mutex::new(process_fn);
-
-    let res = match std::panic::catch_unwind(|| {
-        let state = state_mtx.lock().unwrap().clone();
-        (process_mtx.lock().unwrap())(args, state)
-    }) {
+    let res = match std::panic::catch_unwind(AssertUnwindSafe(|| (process_fn)(args, state))) {
         Ok(fut) => catch_unwind(fut).await,
         Err(e) => Err(e),
     };
