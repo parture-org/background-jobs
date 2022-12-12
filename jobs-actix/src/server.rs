@@ -1,11 +1,9 @@
-use crate::{
-    storage::{ActixStorage, StorageWrapper},
-    worker::Worker,
-};
+use crate::storage::{ActixStorage, StorageWrapper};
 use anyhow::Error;
-use background_jobs_core::{NewJobInfo, ReturnJobInfo, Storage};
+use background_jobs_core::{JobInfo, NewJobInfo, ReturnJobInfo, Storage};
 use std::sync::Arc;
-use tracing::{error, trace};
+use tracing::trace;
+use uuid::Uuid;
 
 /// The server Actor
 ///
@@ -28,33 +26,16 @@ impl Server {
     }
 
     pub(crate) async fn new_job(&self, job: NewJobInfo) -> Result<(), Error> {
-        let ready = job.is_ready();
-        self.storage.new_job(job).await?;
-
-        if !ready {
-            trace!("New job is not ready for processing yet, returning");
-            return Ok(());
-        }
-
-        Ok(())
+        self.storage.new_job(job).await.map(|_| ())
     }
 
     pub(crate) async fn request_job(
         &self,
-        worker: Box<dyn Worker + Send + Sync + 'static>,
-    ) -> Result<(), Error> {
-        trace!("Worker {} requested job", worker.id());
-        let job = self
-            .storage
-            .request_job(worker.queue(), worker.id())
-            .await?;
-
-        if let Err(job) = worker.process(job).await {
-            error!("Worker {} has hung up", worker.id());
-            self.storage.return_job(job.unexecuted()).await?;
-        }
-
-        Ok(())
+        worker_id: Uuid,
+        worker_queue: &str,
+    ) -> Result<JobInfo, Error> {
+        trace!("Worker {} requested job", worker_id);
+        self.storage.request_job(worker_queue, worker_id).await
     }
 
     pub(crate) async fn return_job(&self, job: ReturnJobInfo) -> Result<(), Error> {
