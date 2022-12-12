@@ -244,6 +244,7 @@ struct DropNotifier {
 
 impl Drop for DropNotifier {
     fn drop(&mut self) {
+        tracing::warn!("DropNotifier dropped - Arbiter tearing down");
         self.notify.notify_waiters();
     }
 }
@@ -270,9 +271,11 @@ impl Deref for ArbiterDropper {
 
 impl Drop for ArbiterDropper {
     fn drop(&mut self) {
+        tracing::warn!("Stopping and joining arbiter");
         let arbiter = self.arbiter.take().unwrap();
         arbiter.stop();
         let _ = arbiter.join();
+        tracing::warn!("Joined");
     }
 }
 
