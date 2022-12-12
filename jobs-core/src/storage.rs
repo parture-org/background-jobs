@@ -305,6 +305,7 @@ pub mod memory_storage {
             Ok(self.get_job(&id))
         }
 
+        #[tracing::instrument(skip(self))]
         async fn fetch_job_from_queue(&self, queue: &str) -> Result<JobInfo, Self::Error> {
             loop {
                 let now = SystemTime::now();
@@ -313,9 +314,13 @@ pub mod memory_storage {
                     return Ok(job);
                 }
 
+                tracing::debug!("No job ready in queue");
                 let (duration, listener) = self.listener(queue, now);
+                tracing::debug!("waiting at most {} seconds", duration.as_secs());
 
-                let _ = self.timer.timeout(duration, listener).await;
+                if duration > Duration::from_secs(0) {
+                    let _ = self.timer.timeout(duration, listener).await;
+                }
             }
         }
 
