@@ -200,6 +200,7 @@ pub mod memory_storage {
             self.inner.lock().unwrap().jobs.get(id).cloned()
         }
 
+        #[tracing::instrument(skip(self))]
         fn try_deque(&self, queue: &str, now: SystemTime) -> Option<JobInfo> {
             let mut inner = self.inner.lock().unwrap();
 
@@ -223,6 +224,7 @@ pub mod memory_storage {
             None
         }
 
+        #[tracing::instrument(skip(self))]
         fn listener(&self, queue: &str, now: SystemTime) -> (Duration, EventListener) {
             let mut inner = self.inner.lock().unwrap();
 
@@ -321,6 +323,7 @@ pub mod memory_storage {
                 if duration > Duration::from_secs(0) {
                     let _ = self.timer.timeout(duration, listener).await;
                 }
+                tracing::debug!("Finished waiting, trying dequeue");
             }
         }
 

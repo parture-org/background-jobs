@@ -192,7 +192,7 @@ where
             span.record("exception.message", &tracing::field::display(&display));
             span.record("exception.details", &tracing::field::display(&debug));
             #[cfg(feature = "error-logging")]
-            tracing::warn!("Job errored: {:?}", e);
+            tracing::warn!("Job errored");
             ReturnJobInfo::fail(id)
         }
         Err(_) => {
