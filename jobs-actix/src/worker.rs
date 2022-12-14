@@ -34,16 +34,16 @@ impl<State: Clone + 'static, Extras: 'static> Drop for LocalWorkerStarter<State,
     }
 }
 
-struct LogOnDrop<F>(F)
+struct RunOnDrop<F>(F)
 where
-    F: Fn() -> Span;
+    F: Fn();
 
-impl<F> Drop for LogOnDrop<F>
+impl<F> Drop for RunOnDrop<F>
 where
-    F: Fn() -> Span,
+    F: Fn(),
 {
     fn drop(&mut self) {
-        (self.0)().in_scope(|| tracing::info!("Worker closing"));
+        (self.0)();
     }
 }
 
@@ -94,7 +94,9 @@ pub(crate) async fn local_worker<State, Extras>(
 
     let id = Uuid::new_v4();
 
-    let log_on_drop = LogOnDrop(|| make_span(id, &queue, "closing"));
+    let log_on_drop = RunOnDrop(|| {
+        make_span(id, &queue, "closing").in_scope(|| tracing::warn!("Worker closing"));
+    });
 
     loop {
         let request_span = make_span(id, &queue, "request");
@@ -119,9 +121,11 @@ pub(crate) async fn local_worker<State, Extras>(
         };
         drop(request_span);
 
+        let process_span = make_span(id, &queue, "process");
         let job_id = job.id();
-        let return_job = time_job(Box::pin(processors.process(job)), job_id)
-            .instrument(make_span(id, &queue, "process"))
+        let return_job = process_span
+            .in_scope(|| time_job(Box::pin(processors.process(job)), job_id))
+            .instrument(process_span)
             .await;
 
         let return_span = make_span(id, &queue, "return");
@@ -147,6 +151,7 @@ pub(crate) async fn local_worker<State, Extras>(
 
 fn make_span(id: Uuid, queue: &str, operation: &str) -> Span {
     tracing::info_span!(
+        parent: None,
         "Worker",
         worker.id = tracing::field::display(id),
         worker.queue = tracing::field::display(queue),

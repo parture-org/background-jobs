@@ -1,7 +1,6 @@
 use crate::{Job, QueueHandle};
 use actix_rt::time::{interval_at, Instant};
 use std::time::Duration;
-use tracing::error;
 
 /// A type used to schedule recurring jobs.
 ///
@@ -20,7 +19,7 @@ where
 
         let job = job.clone();
         if spawner.queue::<J>(job).await.is_err() {
-            error!("Failed to queue job: {}", J::NAME);
+            tracing::error!("Failed to queue job: {}", J::NAME);
         }
     }
 }

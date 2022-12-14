@@ -2,7 +2,6 @@ use crate::storage::{ActixStorage, StorageWrapper};
 use anyhow::Error;
 use background_jobs_core::{JobInfo, NewJobInfo, ReturnJobInfo, Storage};
 use std::sync::Arc;
-use tracing::trace;
 use uuid::Uuid;
 
 /// The server Actor
@@ -34,7 +33,7 @@ impl Server {
         worker_id: Uuid,
         worker_queue: &str,
     ) -> Result<JobInfo, Error> {
-        trace!("Worker {} requested job", worker_id);
+        tracing::trace!("Worker {} requested job", worker_id);
         self.storage.request_job(worker_queue, worker_id).await
     }
 
