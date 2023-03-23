@@ -28,6 +28,7 @@ pub struct MyJob {
 async fn main() -> Result<(), Error> {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
 
+    // Install the metrics subscriber
     let stats_handle = background_jobs::metrics::install()?;
 
     tracing_subscriber::fmt::fmt()
@@ -56,6 +57,7 @@ async fn main() -> Result<(), Error> {
     actix_rt::spawn(async move {
         loop {
             actix_rt::time::sleep(Duration::from_millis(500)).await;
+            // Get the current stats for the background jobs processor
             println!("{:?}", stats_handle.get());
         }
     });
