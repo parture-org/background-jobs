@@ -16,6 +16,7 @@ pub struct StatsHandle {
     storage: Arc<StatsStorageInner>,
 }
 
+/// Recorder type for recording background jobs metrics
 pub struct StatsRecorder {
     registry: Registry<Key, StatsStorage>,
 }
@@ -88,7 +89,7 @@ impl StatsHandle {
     /// Get the current stats about the background jobs processing
     ///
     /// ```rust
-    /// # let (recorder, handle) = background_jobs::metrics::StatsRecorder::build();
+    /// # let (recorder, handle) = background_jobs_metrics::StatsRecorder::build();
     /// println!("{:?}", handle.get());
     /// ```
     pub fn get(&self) -> Stats {
@@ -100,7 +101,7 @@ impl StatsRecorder {
     /// Install the stats recorder into the process
     ///
     /// ```rust
-    /// # use background_jobs::metrics::StatsRecorder;
+    /// # use background_jobs_metrics::StatsRecorder;
     /// StatsRecorder::install().expect("Failed to install recorder");
     /// ```
     pub fn install() -> Result<StatsHandle, SetRecorderError> {
@@ -117,7 +118,7 @@ impl StatsRecorder {
     /// addition to another recorder
     ///
     /// ```rust
-    /// # use background_jobs::metrics::StatsRecorder;
+    /// # use background_jobs_metrics::StatsRecorder;
     /// let (jobs_recorder, handle) = StatsRecorder::build();
     ///
     /// let recorder = metrics_util::layers::FanoutBuilder::default()
