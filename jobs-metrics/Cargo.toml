@@ -5,6 +5,7 @@ version = "0.14.0"
 license = "AGPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/asonix/background-jobs"
+readme = "../README.md"
 keywords = ["jobs", "processor", "actix"]
 edition = "2021"
 
