@@ -17,6 +17,7 @@ members = [
   "examples/basic-example",
   "examples/long-example",
   "examples/managed-example",
+  "examples/metrics-example",
   "examples/panic-example",
 ]
 
