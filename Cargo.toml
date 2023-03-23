@@ -28,6 +28,10 @@ completion-logging = [
 ]
 error-logging = ["background-jobs-core/error-logging"]
 
+[dependencies]
+metrics = "0.20.1"
+metrics-util = "0.14.0"
+
 [dependencies.background-jobs-core]
 version = "0.14.0"
 path = "jobs-core"

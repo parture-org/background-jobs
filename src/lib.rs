@@ -161,7 +161,45 @@
 //! `background-jobs-core` crate, which provides the Job trait, as well as some
 //! other useful types for implementing a jobs processor and job store.
 
+mod recorder;
+
 pub use background_jobs_core::{Backoff, Job, MaxRetries};
+
+pub mod metrics {
+    //! Types for collecting stats from background-jobs
+    pub use metrics::SetRecorderError;
+
+    pub use super::recorder::{JobStat, Stats, StatsHandle, StatsRecorder};
+
+    /// Install the stats recorder into the process
+    ///
+    /// ```rust
+    /// background_jobs::metrics::install().expect("Failed to install recorder");
+    /// ```
+    pub fn install() -> Result<StatsHandle, SetRecorderError> {
+        StatsRecorder::install()
+    }
+
+    /// Build the stats recorder and fetch the handle.
+    ///
+    /// This can be used in conjunction with `metrics_util::layers::FanoutBuilder` to add it in
+    /// addition to another recorder
+    ///
+    /// ```rust
+    /// let (jobs_recorder, handle) = background_jobs::metrics::build();
+    ///
+    /// let recorder = metrics_util::layers::FanoutBuilder::default()
+    ///     .add_recorder(jobs_recorder)
+    ///     .build();
+    ///
+    /// metrics::set_boxed_recorder(Box::new(recorder)).expect("Failed to set recorder");
+    ///
+    /// println!("{:?}", handle.get());
+    /// ```
+    pub fn build() -> (StatsRecorder, StatsHandle) {
+        StatsRecorder::build()
+    }
+}
 
 pub mod dev {
     //! Useful types and methods for developing Storage and Processor implementations.
