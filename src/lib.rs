@@ -30,7 +30,7 @@
 //! [dependencies]
 //! actix-rt = "2.6.0"
 //! anyhow = "1.0"
-//! background-jobs = "0.14.0"
+//! background-jobs = "0.15.0"
 //! serde = { version = "1.0", features = ["derive"] }
 //! ```
 //!
