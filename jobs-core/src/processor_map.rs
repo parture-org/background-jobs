@@ -177,7 +177,7 @@ where
 
     let span = Span::current();
     span.record("job.execution_time", &tracing::field::display(&seconds));
-    metrics::histogram!("background-jobs.job.execution_time", seconds, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+    metrics::histogram!("background-jobs.job.execution_time", "queue" => job.queue().to_string(), "name" => job.name().to_string()).record(seconds);
 
     match res {
         Ok(Ok(_)) => {

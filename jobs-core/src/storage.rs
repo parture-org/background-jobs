@@ -48,7 +48,7 @@ pub trait Storage: Clone + Send {
         let id = self.generate_id().await?;
 
         let job = job.with_id(id);
-        metrics::counter!("background-jobs.job.created", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+        metrics::counter!("background-jobs.job.created", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
 
         let queue = job.queue().to_owned();
         self.save_job(job).await?;
@@ -68,7 +68,7 @@ pub trait Storage: Clone + Send {
                 self.run_job(job.id(), runner_id).await?;
                 self.save_job(job.clone()).await?;
 
-                metrics::counter!("background-jobs.job.started", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                metrics::counter!("background-jobs.job.started", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
 
                 return Ok(job);
             } else {
@@ -89,14 +89,14 @@ pub trait Storage: Clone + Send {
         if result.is_failure() {
             if let Some(mut job) = self.fetch_job(id).await? {
                 if job.needs_retry() {
-                    metrics::counter!("background-jobs.job.failed", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
-                    metrics::counter!("background-jobs.job.finished", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                    metrics::counter!("background-jobs.job.failed", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
+                    metrics::counter!("background-jobs.job.finished", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
 
                     self.queue_job(job.queue(), id).await?;
                     self.save_job(job).await
                 } else {
-                    metrics::counter!("background-jobs.job.dead", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
-                    metrics::counter!("background-jobs.job.finished", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                    metrics::counter!("background-jobs.job.dead", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
+                    metrics::counter!("background-jobs.job.finished", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
 
                     #[cfg(feature = "error-logging")]
                     tracing::warn!("Job {} failed permanently", id);
@@ -105,29 +105,29 @@ pub trait Storage: Clone + Send {
                 }
             } else {
                 tracing::warn!("Returned non-existant job");
-                metrics::counter!("background-jobs.job.missing", 1);
+                metrics::counter!("background-jobs.job.missing").increment(1);
                 Ok(())
             }
         } else if result.is_unregistered() || result.is_unexecuted() {
             if let Some(mut job) = self.fetch_job(id).await? {
-                metrics::counter!("background-jobs.job.returned", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
-                metrics::counter!("background-jobs.job.finished", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                metrics::counter!("background-jobs.job.returned", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
+                metrics::counter!("background-jobs.job.finished", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
 
                 job.pending();
                 self.queue_job(job.queue(), id).await?;
                 self.save_job(job).await
             } else {
                 tracing::warn!("Returned non-existant job");
-                metrics::counter!("background-jobs.job.missing", 1);
+                metrics::counter!("background-jobs.job.missing").increment(1);
                 Ok(())
             }
         } else {
             if let Some(job) = self.fetch_job(id).await? {
-                metrics::counter!("background-jobs.job.completed", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
-                metrics::counter!("background-jobs.job.finished", 1, "queue" => job.queue().to_string(), "name" => job.name().to_string());
+                metrics::counter!("background-jobs.job.completed", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
+                metrics::counter!("background-jobs.job.finished", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
             } else {
                 tracing::warn!("Returned non-existant job");
-                metrics::counter!("background-jobs.job.missing", 1);
+                metrics::counter!("background-jobs.job.missing").increment(1);
             }
 
             self.delete_job(id).await

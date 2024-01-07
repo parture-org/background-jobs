@@ -30,7 +30,7 @@ pub use recorder::{JobStat, Stats, StatsHandle, StatsRecorder};
 /// ```rust
 /// background_jobs_metrics::install().expect("Failed to install recorder");
 /// ```
-pub fn install() -> Result<StatsHandle, SetRecorderError> {
+pub fn install() -> Result<StatsHandle, SetRecorderError<StatsRecorder>> {
     StatsRecorder::install()
 }
 

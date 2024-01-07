@@ -1,7 +1,7 @@
 mod bucket;
 
 use self::bucket::Buckets;
-use metrics::{CounterFn, GaugeFn, HistogramFn, Key, Recorder, SetRecorderError};
+use metrics::{CounterFn, GaugeFn, HistogramFn, Key, Metadata, Recorder, SetRecorderError};
 use metrics_util::registry::{Registry, Storage};
 use std::{
     sync::{
@@ -104,10 +104,10 @@ impl StatsRecorder {
     /// # use background_jobs_metrics::StatsRecorder;
     /// StatsRecorder::install().expect("Failed to install recorder");
     /// ```
-    pub fn install() -> Result<StatsHandle, SetRecorderError> {
+    pub fn install() -> Result<StatsHandle, SetRecorderError<StatsRecorder>> {
         let (recorder, handle) = Self::build();
 
-        metrics::set_boxed_recorder(Box::new(recorder))?;
+        metrics::set_global_recorder(recorder)?;
 
         Ok(handle)
     }
@@ -207,16 +207,16 @@ impl Recorder for StatsRecorder {
     ) {
     }
 
-    fn register_counter(&self, key: &Key) -> metrics::Counter {
+    fn register_counter(&self, key: &Key, _: &Metadata<'_>) -> metrics::Counter {
         self.registry
             .get_or_create_counter(key, |c| c.clone().into())
     }
 
-    fn register_gauge(&self, key: &Key) -> metrics::Gauge {
+    fn register_gauge(&self, key: &Key, _: &Metadata<'_>) -> metrics::Gauge {
         self.registry.get_or_create_gauge(key, |c| c.clone().into())
     }
 
-    fn register_histogram(&self, key: &Key) -> metrics::Histogram {
+    fn register_histogram(&self, key: &Key, _: &Metadata<'_>) -> metrics::Histogram {
         self.registry
             .get_or_create_histogram(key, |c| c.clone().into())
     }

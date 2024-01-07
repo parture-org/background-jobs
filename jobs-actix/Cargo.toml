@@ -1,7 +1,7 @@
 [package]
 name = "background-jobs-actix"
 description = "in-process jobs processor based on Actix"
-version = "0.15.0"
+version = "0.16.0"
 license = "AGPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/asonix/background-jobs"
@@ -13,10 +13,10 @@ edition = "2021"
 actix-rt = "2.5.1"
 anyhow = "1.0"
 async-trait = "0.1.24"
-background-jobs-core = { version = "0.15.0", path = "../jobs-core", features = [
+background-jobs-core = { version = "0.16.0", path = "../jobs-core", features = [
   "with-actix",
 ] }
-metrics = "0.21.0"
+metrics = "0.22.0"
 tracing = "0.1"
 tracing-futures = "0.2"
 serde = { version = "1.0", features = ["derive"] }

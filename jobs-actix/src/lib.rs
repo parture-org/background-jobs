@@ -197,7 +197,7 @@ impl Manager {
 
                     notified.await;
 
-                    metrics::counter!("background-jobs.worker-arbiter.restart", 1, "number" => i.to_string());
+                    metrics::counter!("background-jobs.worker-arbiter.restart", "number" => i.to_string()).increment(1);
                     tracing::warn!("Recovering from dead worker arbiter");
 
                     drop(worker_arbiter);

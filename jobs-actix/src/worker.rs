@@ -14,7 +14,8 @@ struct LocalWorkerStarter<State: Clone + 'static, Extras: 'static> {
 
 impl<State: Clone + 'static, Extras: 'static> Drop for LocalWorkerStarter<State, Extras> {
     fn drop(&mut self) {
-        metrics::counter!("background-jobs.worker.finished", 1, "queue" => self.queue.clone());
+        metrics::counter!("background-jobs.worker.finished", "queue" => self.queue.clone())
+            .increment(1);
 
         let res = std::panic::catch_unwind(|| actix_rt::Arbiter::current().spawn(async move {}));
 
@@ -83,7 +84,7 @@ pub(crate) async fn local_worker<State, Extras>(
     State: Clone + 'static,
     Extras: 'static,
 {
-    metrics::counter!("background-jobs.worker.started", 1, "queue" => queue.clone());
+    metrics::counter!("background-jobs.worker.started", "queue" => queue.clone()).increment(1);
 
     let starter = LocalWorkerStarter {
         queue: queue.clone(),
@@ -108,7 +109,7 @@ pub(crate) async fn local_worker<State, Extras>(
         {
             Ok(job) => job,
             Err(e) => {
-                metrics::counter!("background-jobs.worker.failed-request", 1);
+                metrics::counter!("background-jobs.worker.failed-request").increment(1);
 
                 let display_val = format!("{}", e);
                 let debug = format!("{:?}", e);
@@ -134,7 +135,7 @@ pub(crate) async fn local_worker<State, Extras>(
             .instrument(return_span.clone())
             .await
         {
-            metrics::counter!("background-jobs.worker.failed-return", 1);
+            metrics::counter!("background-jobs.worker.failed-return").increment(1);
 
             let display_val = format!("{}", e);
             let debug = format!("{:?}", e);
