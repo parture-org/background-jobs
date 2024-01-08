@@ -1,6 +1,7 @@
 use actix_rt::Arbiter;
 use anyhow::Error;
 use background_jobs::{
+    metrics::MetricsStorage,
     ActixSpawner,
     MaxRetries,
     // memory_storage::{ActixTimer, Storage},
@@ -38,7 +39,7 @@ async fn main() -> Result<(), Error> {
 
     // Set up our Storage
     let db = sled::Config::new().temporary(true).open()?;
-    let storage = Storage::new(db)?;
+    let storage = MetricsStorage::wrap(Storage::new(db)?);
     // let storage = Storage::new(ActixTimer);
 
     let arbiter = Arbiter::new();
