@@ -13,6 +13,9 @@ pub trait Storage: Clone + Send {
     /// The error type used by the storage mechansim.
     type Error: Error + Send + Sync;
 
+    /// Get the JobInfo for a given job ID
+    async fn info(&self, job_id: Uuid) -> Result<Option<JobInfo>, Self::Error>;
+
     /// push a job into the queue
     async fn push(&self, job: NewJobInfo) -> Result<Uuid, Self::Error>;
 
@@ -23,7 +26,9 @@ pub trait Storage: Clone + Send {
     async fn heartbeat(&self, job_id: Uuid, runner_id: Uuid) -> Result<(), Self::Error>;
 
     /// "Return" a job to the database, marking it for retry if needed
-    async fn complete(&self, return_job_info: ReturnJobInfo) -> Result<(), Self::Error>;
+    ///
+    /// returns `true` if the job has not been requeued
+    async fn complete(&self, return_job_info: ReturnJobInfo) -> Result<bool, Self::Error>;
 }
 
 /// A default, in-memory implementation of a storage mechanism
@@ -81,6 +86,10 @@ pub mod memory_storage {
                 })),
                 timer,
             }
+        }
+
+        fn get(&self, job_id: Uuid) -> Option<JobInfo> {
+            self.inner.lock().unwrap().jobs.get(&job_id).cloned()
         }
 
         fn listener(&self, pop_queue: String) -> (Pin<Box<EventListener>>, Duration) {
@@ -216,6 +225,10 @@ pub mod memory_storage {
     impl<T: Timer + Send + Sync + Clone> super::Storage for Storage<T> {
         type Error = Infallible;
 
+        async fn info(&self, job_id: Uuid) -> Result<Option<JobInfo>, Self::Error> {
+            Ok(self.get(job_id))
+        }
+
         /// push a job into the queue
         async fn push(&self, job: NewJobInfo) -> Result<Uuid, Self::Error> {
             Ok(self.insert(job.build()))
@@ -251,29 +264,25 @@ pub mod memory_storage {
         async fn complete(
             &self,
             ReturnJobInfo { id, result }: ReturnJobInfo,
-        ) -> Result<(), Self::Error> {
+        ) -> Result<bool, Self::Error> {
             let mut job = if let Some(job) = self.remove_job(id) {
                 job
             } else {
-                return Ok(());
+                return Ok(true);
             };
 
             match result {
-                JobResult::Success => {
-                    // nothing
-                }
-                JobResult::Unregistered | JobResult::Unexecuted => {
-                    // do stuff...
-                }
+                JobResult::Success => Ok(true),
+                JobResult::Unregistered | JobResult::Unexecuted => Ok(true),
                 JobResult::Failure => {
-                    // requeue
                     if job.prepare_retry() {
                         self.insert(job);
+                        return Ok(false);
+                    } else {
+                        Ok(true)
                     }
                 }
             }
-
-            Ok(())
         }
     }
 }

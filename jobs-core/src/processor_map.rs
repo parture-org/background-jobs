@@ -165,6 +165,8 @@ where
 {
     let args = job.args.clone();
     let id = job.id;
+    let name = job.name.clone();
+    let queue = job.queue.clone();
 
     let start = Instant::now();
 
@@ -177,12 +179,12 @@ where
 
     let span = Span::current();
     span.record("job.execution_time", &tracing::field::display(&seconds));
-    metrics::histogram!("background-jobs.job.execution_time", "queue" => job.queue.clone(), "name" => job.name.clone()).record(seconds);
+    metrics::histogram!("background-jobs.job.execution_time", "queue" => queue.clone(), "name" => name.clone()).record(seconds);
 
     match res {
         Ok(Ok(_)) => {
             #[cfg(feature = "completion-logging")]
-            tracing::info!("Job completed");
+            tracing::info!("Job {queue}: {name}-{id} completed");
 
             ReturnJobInfo::pass(id)
         }
@@ -192,7 +194,7 @@ where
             span.record("exception.message", &tracing::field::display(&display));
             span.record("exception.details", &tracing::field::display(&debug));
             #[cfg(feature = "error-logging")]
-            tracing::warn!("Job errored");
+            tracing::warn!("Job {queue}: {name}-{id} errored");
             ReturnJobInfo::fail(id)
         }
         Err(_) => {
@@ -205,7 +207,7 @@ where
                 &tracing::field::display("Job panicked"),
             );
             #[cfg(feature = "error-logging")]
-            tracing::warn!("Job panicked");
+            tracing::warn!("Job {queue}: {name}-{id} panicked");
             ReturnJobInfo::fail(id)
         }
     }

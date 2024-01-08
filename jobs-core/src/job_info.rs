@@ -92,6 +92,11 @@ impl NewJobInfo {
         &self.queue
     }
 
+    /// The name of this job
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// Whether this job is ready to be run immediately
     pub fn is_ready(&self) -> bool {
         self.next_queue.is_none()
