@@ -161,7 +161,7 @@
 //! `background-jobs-core` crate, which provides the Job trait, as well as some
 //! other useful types for implementing a jobs processor and job store.
 
-pub use background_jobs_core::{Backoff, Job, MaxRetries};
+pub use background_jobs_core::{Backoff, Job, MaxRetries, UnsendJob, UnsendSpawner};
 
 #[cfg(feature = "background-jobs-metrics")]
 pub mod metrics {
@@ -186,4 +186,4 @@ pub mod memory_storage {
 }
 
 #[cfg(feature = "background-jobs-actix")]
-pub use background_jobs_actix::{ActixJob, Manager, QueueHandle, WorkerConfig};
+pub use background_jobs_actix::{ActixSpawner, Manager, QueueHandle, WorkerConfig};
