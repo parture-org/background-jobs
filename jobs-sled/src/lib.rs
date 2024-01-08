@@ -90,6 +90,10 @@ pub struct Storage {
 impl background_jobs_core::Storage for Storage {
     type Error = Error;
 
+    async fn info(&self, job_id: Uuid) -> Result<Option<JobInfo>> {
+        self.get(job_id)
+    }
+
     async fn push(&self, job: NewJobInfo) -> Result<Uuid> {
         self.insert(job.build())
     }
@@ -121,28 +125,29 @@ impl background_jobs_core::Storage for Storage {
         self.set_heartbeat(job_id, runner_id)
     }
 
-    async fn complete(&self, ReturnJobInfo { id, result }: ReturnJobInfo) -> Result<()> {
+    async fn complete(&self, ReturnJobInfo { id, result }: ReturnJobInfo) -> Result<bool> {
         let mut job = if let Some(job) = self.remove_job(id)? {
             job
         } else {
-            return Ok(());
+            return Ok(true);
         };
 
         match result {
             JobResult::Success => {
                 // ok
-                Ok(())
+                Ok(true)
             }
             JobResult::Unexecuted | JobResult::Unregistered => {
                 // TODO: handle
-                Ok(())
+                Ok(true)
             }
             JobResult::Failure => {
                 if job.prepare_retry() {
                     self.insert(job)?;
+                    Ok(false)
+                } else {
+                    Ok(true)
                 }
-
-                Ok(())
             }
         }
     }
@@ -157,6 +162,16 @@ impl Storage {
             queues: Arc::new(Mutex::new(HashMap::new())),
             _db: db,
         })
+    }
+
+    fn get(&self, job_id: Uuid) -> Result<Option<JobInfo>> {
+        if let Some(ivec) = self.jobs.get(job_id.as_bytes())? {
+            let job_info = serde_cbor::from_slice(&ivec)?;
+
+            Ok(Some(job_info))
+        } else {
+            Ok(None)
+        }
     }
 
     fn notifier(&self, queue: String) -> Arc<Notify> {
