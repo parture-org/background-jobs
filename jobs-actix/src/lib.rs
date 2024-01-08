@@ -136,7 +136,7 @@ mod worker;
 
 use self::{every::every, server::Server};
 
-pub use actix_job::{ActixJob, ActixJobExt};
+pub use actix_job::ActixSpawner;
 
 /// A timer implementation for the Memory Storage backend
 #[derive(Debug, Clone)]
@@ -472,9 +472,9 @@ impl QueueHandle {
     /// job's queue is free to do so.
     pub async fn queue<J>(&self, job: J) -> Result<(), Error>
     where
-        J: ActixJob,
+        J: Job,
     {
-        let job = new_job(job.into_job())?;
+        let job = new_job(job)?;
         self.inner.push(job).await?;
         Ok(())
     }
@@ -485,9 +485,9 @@ impl QueueHandle {
     /// and when a worker for the job's queue is free to do so.
     pub async fn schedule<J>(&self, job: J, after: SystemTime) -> Result<(), Error>
     where
-        J: ActixJob,
+        J: Job,
     {
-        let job = new_scheduled_job(job.into_job(), after)?;
+        let job = new_scheduled_job(job, after)?;
         self.inner.push(job).await?;
         Ok(())
     }
@@ -498,7 +498,7 @@ impl QueueHandle {
     /// processed whenever workers are free to do so.
     pub fn every<J>(&self, duration: Duration, job: J)
     where
-        J: ActixJob + Clone + Send + 'static,
+        J: Job + Clone + Send + 'static,
     {
         actix_rt::spawn(every(self.clone(), duration, job));
     }

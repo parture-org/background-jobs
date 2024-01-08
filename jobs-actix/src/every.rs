@@ -1,5 +1,6 @@
-use crate::{ActixJob, QueueHandle};
+use crate::QueueHandle;
 use actix_rt::time::{interval_at, Instant};
+use background_jobs_core::Job;
 use std::time::Duration;
 
 /// A type used to schedule recurring jobs.
@@ -10,7 +11,7 @@ use std::time::Duration;
 /// ```
 pub(crate) async fn every<J>(spawner: QueueHandle, duration: Duration, job: J)
 where
-    J: ActixJob + Clone + Send,
+    J: Job + Clone + Send,
 {
     let mut interval = interval_at(Instant::now(), duration);
 
