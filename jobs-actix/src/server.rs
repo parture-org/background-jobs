@@ -26,7 +26,7 @@ impl Server {
 }
 
 impl Deref for Server {
-    type Target = dyn ActixStorage;
+    type Target = dyn ActixStorage + Send + Sync;
 
     fn deref(&self) -> &Self::Target {
         self.storage.as_ref()
