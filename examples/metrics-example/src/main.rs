@@ -1,9 +1,10 @@
 use actix_rt::Arbiter;
 use anyhow::Error;
 use background_jobs::{
-    // memory_storage::{ActixTimer, Storage},
-    ActixJob as Job,
+    ActixSpawner,
     MaxRetries,
+    // memory_storage::{ActixTimer, Storage},
+    UnsendJob as Job,
     WorkerConfig,
 };
 use background_jobs_sled_storage::Storage;
@@ -91,6 +92,7 @@ impl MyJob {
 impl Job for MyJob {
     type State = MyState;
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>;
+    type Spawner = ActixSpawner;
 
     // The name of the job. It is super important that each job has a unique name,
     // because otherwise one job will overwrite another job when they're being

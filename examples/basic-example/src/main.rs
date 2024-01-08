@@ -1,12 +1,10 @@
 use actix_rt::Arbiter;
 use anyhow::Error;
 use background_jobs::{
-    // memory_storage::{ActixTimer, Storage},
-    ActixJob as Job,
-    MaxRetries,
-    WorkerConfig,
+    memory_storage::{ActixTimer, Storage},
+    ActixSpawner, MaxRetries, UnsendJob as Job, WorkerConfig,
 };
-use background_jobs_sled_storage::Storage;
+// use background_jobs_sled_storage::Storage;
 use std::{
     future::{ready, Ready},
     time::{Duration, SystemTime},
@@ -36,9 +34,8 @@ async fn main() -> Result<(), Error> {
         .init();
 
     // Set up our Storage
-    let db = sled::Config::new().temporary(true).open()?;
-    let storage = Storage::new(db)?;
-    // let storage = Storage::new(ActixTimer);
+    // let db = sled::Config::new().temporary(true).open()?;
+    let storage = Storage::new(ActixTimer);
 
     let arbiter = Arbiter::new();
 
@@ -53,9 +50,11 @@ async fn main() -> Result<(), Error> {
     queue_handle.queue(MyJob::new(1, 2)).await?;
     queue_handle.queue(MyJob::new(3, 4)).await?;
     queue_handle.queue(MyJob::new(5, 6)).await?;
-    queue_handle
-        .schedule(MyJob::new(7, 8), SystemTime::now() + Duration::from_secs(2))
-        .await?;
+    for i in 0..20 {
+        queue_handle
+            .schedule(MyJob::new(7, 8), SystemTime::now() + Duration::from_secs(i))
+            .await?;
+    }
 
     // Block on Actix
     actix_rt::signal::ctrl_c().await?;
@@ -86,6 +85,7 @@ impl MyJob {
 impl Job for MyJob {
     type State = MyState;
     type Future = Ready<Result<(), Error>>;
+    type Spawner = ActixSpawner;
 
     // The name of the job. It is super important that each job has a unique name,
     // because otherwise one job will overwrite another job when they're being

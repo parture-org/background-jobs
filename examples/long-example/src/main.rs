@@ -1,6 +1,6 @@
 use actix_rt::Arbiter;
 use anyhow::Error;
-use background_jobs::{ActixJob as Job, MaxRetries, WorkerConfig};
+use background_jobs::{ActixSpawner, MaxRetries, UnsendJob as Job, WorkerConfig};
 use background_jobs_sled_storage::Storage;
 use std::{
     future::{ready, Future, Ready},
@@ -88,6 +88,7 @@ impl MyJob {
 impl Job for MyJob {
     type State = MyState;
     type Future = Ready<Result<(), Error>>;
+    type Spawner = ActixSpawner;
 
     // The name of the job. It is super important that each job has a unique name,
     // because otherwise one job will overwrite another job when they're being
@@ -117,6 +118,7 @@ impl Job for MyJob {
 impl Job for LongJob {
     type State = MyState;
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
+    type Spawner = ActixSpawner;
 
     const NAME: &'static str = "LongJob";
 
