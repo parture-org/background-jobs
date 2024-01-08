@@ -7,8 +7,7 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tracing::Span;
-use tracing_futures::Instrument;
+use tracing::{Instrument, Span};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// The type produced when a task is dropped before completion as a result of being deliberately

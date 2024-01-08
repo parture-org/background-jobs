@@ -3,8 +3,7 @@ use anyhow::Error;
 use serde::{de::DeserializeOwned, ser::Serialize};
 use serde_json::Value;
 use std::{future::Future, pin::Pin, time::SystemTime};
-use tracing::Span;
-use tracing_futures::Instrument;
+use tracing::{Instrument, Span};
 
 /// The Job trait defines parameters pertaining to an instance of background job
 ///

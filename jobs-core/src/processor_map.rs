@@ -4,8 +4,7 @@ use std::{
     collections::HashMap, future::Future, panic::AssertUnwindSafe, pin::Pin, sync::Arc,
     time::Instant,
 };
-use tracing::Span;
-use tracing_futures::Instrument;
+use tracing::{Instrument, Span};
 use uuid::Uuid;
 
 /// A generic function that processes a job

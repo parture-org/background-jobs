@@ -1,8 +1,7 @@
 use crate::Server;
 use background_jobs_core::CachedProcessorMap;
 use std::future::Future;
-use tracing::Span;
-use tracing_futures::Instrument;
+use tracing::{Instrument, Span};
 use uuid::Uuid;
 
 struct LocalWorkerStarter<State: Clone + 'static, Extras: 'static> {
