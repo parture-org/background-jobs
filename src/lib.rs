@@ -166,7 +166,8 @@ pub use background_jobs_core::{Backoff, Job, MaxRetries, UnsendJob, UnsendSpawne
 #[cfg(feature = "background-jobs-metrics")]
 pub mod metrics {
     pub use background_jobs_metrics::{
-        build, install, JobStat, SetRecorderError, Stats, StatsHandle, StatsRecorder,
+        build, install, JobStat, MetricsStorage, SetRecorderError, Stats, StatsHandle,
+        StatsRecorder,
     };
 }
 
