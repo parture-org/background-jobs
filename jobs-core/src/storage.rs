@@ -1,5 +1,5 @@
 use crate::{JobInfo, NewJobInfo, ReturnJobInfo};
-use std::{error::Error, time::SystemTime};
+use std::error::Error;
 use uuid::Uuid;
 
 /// Define a storage backend for jobs
@@ -13,141 +13,36 @@ pub trait Storage: Clone + Send {
     /// The error type used by the storage mechansim.
     type Error: Error + Send + Sync;
 
-    /// This method generates unique IDs for jobs
-    async fn generate_id(&self) -> Result<Uuid, Self::Error>;
+    /// push a job into the queue
+    async fn push(&self, job: NewJobInfo) -> Result<Uuid, Self::Error>;
 
-    /// This method should store the supplied job
-    ///
-    /// The supplied job _may already be present_. The implementation should overwrite the stored
-    /// job with the new job so that future calls to `fetch_job` return the new one.
-    async fn save_job(&self, job: JobInfo) -> Result<(), Self::Error>;
+    /// pop a job from the provided queue
+    async fn pop(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Self::Error>;
 
-    /// This method should return the job with the given ID regardless of what state the job is in.
-    async fn fetch_job(&self, id: Uuid) -> Result<Option<JobInfo>, Self::Error>;
-
-    /// This should fetch a job ready to be processed from the queue
-    ///
-    /// If a job is not ready, is currently running, or is not in the requested queue, this method
-    /// should not return it. If no jobs meet these criteria, this method wait until a job becomes available
-    async fn fetch_job_from_queue(&self, queue: &str) -> Result<JobInfo, Self::Error>;
-
-    /// This method tells the storage mechanism to mark the given job as being in the provided
-    /// queue
-    async fn queue_job(&self, queue: &str, id: Uuid) -> Result<(), Self::Error>;
-
-    /// This method tells the storage mechanism to mark a given job as running
-    async fn run_job(&self, id: Uuid, runner_id: Uuid) -> Result<(), Self::Error>;
-
-    /// This method tells the storage mechanism to remove the job
-    ///
-    /// This happens when a job has been completed or has failed too many times
-    async fn delete_job(&self, id: Uuid) -> Result<(), Self::Error>;
-
-    /// Generate a new job based on the provided NewJobInfo
-    async fn new_job(&self, job: NewJobInfo) -> Result<Uuid, Self::Error> {
-        let id = self.generate_id().await?;
-
-        let job = job.with_id(id);
-        metrics::counter!("background-jobs.job.created", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
-
-        let queue = job.queue().to_owned();
-        self.save_job(job).await?;
-        self.queue_job(&queue, id).await?;
-
-        Ok(id)
-    }
-
-    /// Fetch a job that is ready to be executed, marking it as running
-    async fn request_job(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Self::Error> {
-        loop {
-            let mut job = self.fetch_job_from_queue(queue).await?;
-
-            let now = SystemTime::now();
-            if job.is_pending(now) && job.is_ready(now) && job.is_in_queue(queue) {
-                job.run();
-                self.run_job(job.id(), runner_id).await?;
-                self.save_job(job.clone()).await?;
-
-                metrics::counter!("background-jobs.job.started", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
-
-                return Ok(job);
-            } else {
-                tracing::warn!(
-                    "Not fetching job {}, it is not ready for processing",
-                    job.id()
-                );
-                self.queue_job(job.queue(), job.id()).await?;
-            }
-        }
-    }
+    /// mark a job as being actively worked on
+    async fn heartbeat(&self, job_id: Uuid, runner_id: Uuid) -> Result<(), Self::Error>;
 
     /// "Return" a job to the database, marking it for retry if needed
-    async fn return_job(
-        &self,
-        ReturnJobInfo { id, result }: ReturnJobInfo,
-    ) -> Result<(), Self::Error> {
-        if result.is_failure() {
-            if let Some(mut job) = self.fetch_job(id).await? {
-                if job.needs_retry() {
-                    metrics::counter!("background-jobs.job.failed", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
-                    metrics::counter!("background-jobs.job.finished", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
-
-                    self.queue_job(job.queue(), id).await?;
-                    self.save_job(job).await
-                } else {
-                    metrics::counter!("background-jobs.job.dead", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
-                    metrics::counter!("background-jobs.job.finished", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
-
-                    #[cfg(feature = "error-logging")]
-                    tracing::warn!("Job {} failed permanently", id);
-
-                    self.delete_job(id).await
-                }
-            } else {
-                tracing::warn!("Returned non-existant job");
-                metrics::counter!("background-jobs.job.missing").increment(1);
-                Ok(())
-            }
-        } else if result.is_unregistered() || result.is_unexecuted() {
-            if let Some(mut job) = self.fetch_job(id).await? {
-                metrics::counter!("background-jobs.job.returned", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
-                metrics::counter!("background-jobs.job.finished", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
-
-                job.pending();
-                self.queue_job(job.queue(), id).await?;
-                self.save_job(job).await
-            } else {
-                tracing::warn!("Returned non-existant job");
-                metrics::counter!("background-jobs.job.missing").increment(1);
-                Ok(())
-            }
-        } else {
-            if let Some(job) = self.fetch_job(id).await? {
-                metrics::counter!("background-jobs.job.completed", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
-                metrics::counter!("background-jobs.job.finished", "queue" => job.queue().to_string(), "name" => job.name().to_string()).increment(1);
-            } else {
-                tracing::warn!("Returned non-existant job");
-                metrics::counter!("background-jobs.job.missing").increment(1);
-            }
-
-            self.delete_job(id).await
-        }
-    }
+    async fn complete(&self, return_job_info: ReturnJobInfo) -> Result<(), Self::Error>;
 }
 
 /// A default, in-memory implementation of a storage mechanism
 pub mod memory_storage {
-    use super::JobInfo;
+    use crate::{JobInfo, JobResult, NewJobInfo, ReturnJobInfo};
+
     use event_listener::{Event, EventListener};
     use std::{
-        collections::HashMap,
+        collections::{BTreeMap, HashMap},
         convert::Infallible,
         future::Future,
+        ops::Bound,
+        pin::Pin,
         sync::Arc,
         sync::Mutex,
-        time::{Duration, SystemTime},
+        time::Duration,
     };
-    use uuid::Uuid;
+    use time::OffsetDateTime;
+    use uuid::{NoContext, Timestamp, Uuid};
 
     /// Allows memory storage to set timeouts for when to retry checking a queue for a job
     #[async_trait::async_trait]
@@ -165,12 +60,14 @@ pub mod memory_storage {
         inner: Arc<Mutex<Inner>>,
     }
 
+    type OrderedKey = (String, Uuid);
+    type JobState = Option<(Uuid, OffsetDateTime)>;
+    type JobMeta = (Uuid, JobState);
+
     struct Inner {
         queues: HashMap<String, Event>,
         jobs: HashMap<Uuid, JobInfo>,
-        job_queues: HashMap<Uuid, String>,
-        worker_ids: HashMap<Uuid, Uuid>,
-        worker_ids_inverse: HashMap<Uuid, Uuid>,
+        queue_jobs: BTreeMap<OrderedKey, JobMeta>,
     }
 
     impl<T: Timer> Storage<T> {
@@ -180,105 +77,139 @@ pub mod memory_storage {
                 inner: Arc::new(Mutex::new(Inner {
                     queues: HashMap::new(),
                     jobs: HashMap::new(),
-                    job_queues: HashMap::new(),
-                    worker_ids: HashMap::new(),
-                    worker_ids_inverse: HashMap::new(),
+                    queue_jobs: BTreeMap::new(),
                 })),
                 timer,
             }
         }
 
-        fn contains_job(&self, uuid: &Uuid) -> bool {
-            self.inner.lock().unwrap().jobs.contains_key(uuid)
-        }
+        fn listener(&self, queue: String) -> (Pin<Box<EventListener>>, Duration) {
+            let lower_bound = Uuid::new_v7(Timestamp::from_unix(NoContext, 0, 0));
+            let upper_bound = Uuid::now_v7();
 
-        fn insert_job(&self, job: JobInfo) {
-            self.inner.lock().unwrap().jobs.insert(job.id(), job);
-        }
-
-        fn get_job(&self, id: &Uuid) -> Option<JobInfo> {
-            self.inner.lock().unwrap().jobs.get(id).cloned()
-        }
-
-        #[tracing::instrument(skip(self))]
-        fn try_deque(&self, queue: &str, now: SystemTime) -> Option<JobInfo> {
             let mut inner = self.inner.lock().unwrap();
 
-            let j = inner.job_queues.iter().find_map(|(k, v)| {
-                if v == queue {
-                    let job = inner.jobs.get(k)?;
+            let listener = inner.queues.entry(queue.clone()).or_default().listen();
 
-                    if job.is_pending(now) && job.is_ready(now) && job.is_in_queue(queue) {
-                        return Some(job.clone());
+            let next_job = inner
+                .queue_jobs
+                .range((
+                    Bound::Excluded((queue.clone(), lower_bound)),
+                    Bound::Included((queue, upper_bound)),
+                ))
+                .find_map(|(_, (id, meta))| {
+                    if meta.is_none() {
+                        inner.jobs.get(id)
+                    } else {
+                        None
                     }
-                }
+                });
 
+            let duration = if let Some(job) = next_job {
+                let duration = OffsetDateTime::now_utc() - job.next_queue;
+                duration.try_into().ok()
+            } else {
                 None
-            });
+            };
 
-            if let Some(job) = j {
-                inner.job_queues.remove(&job.id());
-                return Some(job);
+            (listener, duration.unwrap_or(Duration::from_secs(10)))
+        }
+
+        fn try_pop(&self, queue: &str, runner_id: Uuid) -> Option<JobInfo> {
+            let lower_bound = Uuid::new_v7(Timestamp::from_unix(NoContext, 0, 0));
+            let upper_bound = Uuid::now_v7();
+            let now = time::OffsetDateTime::now_utc();
+
+            let mut inner = self.inner.lock().unwrap();
+
+            let mut pop_job = None;
+
+            for (_, (job_id, job_meta)) in inner.queue_jobs.range_mut((
+                Bound::Excluded((queue.to_string(), lower_bound)),
+                Bound::Included((queue.to_string(), upper_bound)),
+            )) {
+                if job_meta.is_none()
+                    || job_meta.is_some_and(|(_, h)| h + time::Duration::seconds(30) < now)
+                {
+                    *job_meta = Some((runner_id, now));
+                    pop_job = Some(*job_id);
+                    break;
+                }
+            }
+
+            if let Some(job_id) = pop_job {
+                return inner.jobs.get(&job_id).cloned();
             }
 
             None
         }
 
-        #[tracing::instrument(skip(self))]
-        fn listener(&self, queue: &str, now: SystemTime) -> (Duration, EventListener) {
+        fn set_heartbeat(&self, job_id: Uuid, runner_id: Uuid) {
+            let lower_bound = Uuid::new_v7(Timestamp::from_unix(NoContext, 0, 0));
+            let upper_bound = Uuid::now_v7();
+
             let mut inner = self.inner.lock().unwrap();
 
-            let duration =
-                inner
-                    .job_queues
-                    .iter()
-                    .fold(Duration::from_secs(5), |duration, (id, v_queue)| {
-                        if v_queue == queue {
-                            if let Some(job) = inner.jobs.get(id) {
-                                if let Some(ready_at) = job.next_queue() {
-                                    let job_eta = ready_at
-                                        .duration_since(now)
-                                        .unwrap_or(Duration::from_secs(0));
+            let queue = if let Some(job) = inner.jobs.get(&job_id) {
+                job.queue.clone()
+            } else {
+                return;
+            };
 
-                                    if job_eta < duration {
-                                        return job_eta;
-                                    }
-                                }
-                            }
-                        }
-
-                        duration
-                    });
-
-            let listener = inner.queues.entry(queue.to_string()).or_default().listen();
-
-            (duration, listener)
-        }
-
-        fn queue_and_notify(&self, queue: &str, id: Uuid) {
-            let mut inner = self.inner.lock().unwrap();
-
-            inner.job_queues.insert(id, queue.to_owned());
-
-            inner.queues.entry(queue.to_string()).or_default().notify(1);
-        }
-
-        fn mark_running(&self, job_id: Uuid, worker_id: Uuid) {
-            let mut inner = self.inner.lock().unwrap();
-
-            inner.worker_ids.insert(job_id, worker_id);
-            inner.worker_ids_inverse.insert(worker_id, job_id);
-        }
-
-        fn purge_job(&self, job_id: Uuid) {
-            let mut inner = self.inner.lock().unwrap();
-
-            inner.jobs.remove(&job_id);
-            inner.job_queues.remove(&job_id);
-
-            if let Some(worker_id) = inner.worker_ids.remove(&job_id) {
-                inner.worker_ids_inverse.remove(&worker_id);
+            for (_, (found_job_id, found_job_meta)) in inner.queue_jobs.range_mut((
+                Bound::Excluded((queue.clone(), lower_bound)),
+                Bound::Included((queue, upper_bound)),
+            )) {
+                if *found_job_id == job_id {
+                    *found_job_meta = Some((runner_id, OffsetDateTime::now_utc()));
+                    return;
+                }
             }
+        }
+
+        fn remove_job(&self, job_id: Uuid) -> Option<JobInfo> {
+            let lower_bound = Uuid::new_v7(Timestamp::from_unix(NoContext, 0, 0));
+            let upper_bound = Uuid::now_v7();
+
+            let mut inner = self.inner.lock().unwrap();
+
+            let job = inner.jobs.remove(&job_id)?;
+
+            let mut key = None;
+
+            for (found_key, (found_job_id, _)) in inner.queue_jobs.range_mut((
+                Bound::Excluded((job.queue.clone(), lower_bound)),
+                Bound::Included((job.queue.clone(), upper_bound)),
+            )) {
+                if *found_job_id == job_id {
+                    key = Some(found_key.clone());
+                    break;
+                }
+            }
+
+            if let Some(key) = key {
+                inner.queue_jobs.remove(&key);
+            }
+
+            Some(job)
+        }
+
+        fn insert(&self, job: JobInfo) -> Uuid {
+            let id = job.id;
+            let queue = job.queue.clone();
+            let queue_time_id = job.next_queue_id();
+
+            let mut inner = self.inner.lock().unwrap();
+
+            inner.jobs.insert(id, job);
+
+            inner
+                .queue_jobs
+                .insert((queue.clone(), queue_time_id), (id, None));
+
+            inner.queues.entry(queue).or_default().notify(1);
+
+            id
         }
     }
 
@@ -286,61 +217,62 @@ pub mod memory_storage {
     impl<T: Timer + Send + Sync + Clone> super::Storage for Storage<T> {
         type Error = Infallible;
 
-        async fn generate_id(&self) -> Result<Uuid, Self::Error> {
-            let uuid = loop {
-                let uuid = Uuid::new_v4();
-                if !self.contains_job(&uuid) {
-                    break uuid;
-                }
-            };
-
-            Ok(uuid)
+        /// push a job into the queue
+        async fn push(&self, job: NewJobInfo) -> Result<Uuid, Self::Error> {
+            Ok(self.insert(job.build()))
         }
 
-        async fn save_job(&self, job: JobInfo) -> Result<(), Self::Error> {
-            self.insert_job(job);
-
-            Ok(())
-        }
-
-        async fn fetch_job(&self, id: Uuid) -> Result<Option<JobInfo>, Self::Error> {
-            Ok(self.get_job(&id))
-        }
-
-        #[tracing::instrument(skip(self))]
-        async fn fetch_job_from_queue(&self, queue: &str) -> Result<JobInfo, Self::Error> {
+        /// pop a job from the provided queue
+        async fn pop(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Self::Error> {
             loop {
-                let now = SystemTime::now();
+                let (listener, duration) = self.listener(queue.to_string());
 
-                if let Some(job) = self.try_deque(queue, now) {
+                if let Some(job) = self.try_pop(queue, runner_id) {
                     return Ok(job);
                 }
 
-                tracing::debug!("No job ready in queue");
-                let (duration, listener) = self.listener(queue, now);
-                tracing::debug!("waiting at most {} seconds", duration.as_secs());
-
-                if duration > Duration::from_secs(0) {
-                    let _ = self.timer.timeout(duration, listener).await;
+                match self.timer.timeout(duration, listener).await {
+                    Ok(()) => {
+                        // listener wakeup
+                    }
+                    Err(()) => {
+                        // timeout
+                    }
                 }
-                tracing::debug!("Finished waiting, trying dequeue");
             }
         }
 
-        async fn queue_job(&self, queue: &str, id: Uuid) -> Result<(), Self::Error> {
-            self.queue_and_notify(queue, id);
-
+        /// mark a job as being actively worked on
+        async fn heartbeat(&self, job_id: Uuid, runner_id: Uuid) -> Result<(), Self::Error> {
+            self.set_heartbeat(job_id, runner_id);
             Ok(())
         }
 
-        async fn run_job(&self, id: Uuid, worker_id: Uuid) -> Result<(), Self::Error> {
-            self.mark_running(id, worker_id);
+        /// "Return" a job to the database, marking it for retry if needed
+        async fn complete(
+            &self,
+            ReturnJobInfo { id, result }: ReturnJobInfo,
+        ) -> Result<(), Self::Error> {
+            let mut job = if let Some(job) = self.remove_job(id) {
+                job
+            } else {
+                return Ok(());
+            };
 
-            Ok(())
-        }
-
-        async fn delete_job(&self, id: Uuid) -> Result<(), Self::Error> {
-            self.purge_job(id);
+            match result {
+                JobResult::Success => {
+                    // nothing
+                }
+                JobResult::Unregistered | JobResult::Unexecuted => {
+                    // do stuff...
+                }
+                JobResult::Failure => {
+                    // requeue
+                    if job.prepare_retry() {
+                        self.insert(job);
+                    }
+                }
+            }
 
             Ok(())
         }

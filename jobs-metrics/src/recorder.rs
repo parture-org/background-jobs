@@ -326,30 +326,22 @@ impl HistogramFn for Histogram {
     fn record(&self, _: f64) {}
 }
 
-const SECONDS: u64 = 1;
-const MINUTES: u64 = 60 * SECONDS;
-const HOURS: u64 = 60 * MINUTES;
-const DAYS: u64 = 24 * HOURS;
-const MONTHS: u64 = 30 * DAYS;
+const SECOND: u64 = 1;
+const MINUTE: u64 = 60 * SECOND;
+const HOUR: u64 = 60 * MINUTE;
+const DAY: u64 = 24 * HOUR;
+const MONTH: u64 = 30 * DAY;
 
 impl Default for JobStatStorage {
     fn default() -> Self {
         JobStatStorage {
             hour: Buckets::new(
-                Duration::from_secs(1 * HOURS),
-                Duration::from_secs(3 * MINUTES),
+                Duration::from_secs(HOUR),
+                Duration::from_secs(3 * MINUTE),
                 20,
             ),
-            day: Buckets::new(
-                Duration::from_secs(1 * DAYS),
-                Duration::from_secs(1 * HOURS),
-                24,
-            ),
-            month: Buckets::new(
-                Duration::from_secs(1 * MONTHS),
-                Duration::from_secs(1 * DAYS),
-                30,
-            ),
+            day: Buckets::new(Duration::from_secs(DAY), Duration::from_secs(HOUR), 24),
+            month: Buckets::new(Duration::from_secs(MONTH), Duration::from_secs(DAY), 30),
             total: 0,
         }
     }

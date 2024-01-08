@@ -1,21 +1,54 @@
-use crate::{Backoff, Job, MaxRetries};
-use actix_rt::task::JoinHandle;
-use anyhow::Error;
-use serde::{de::DeserializeOwned, ser::Serialize};
-use std::{
-    fmt::Debug,
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
-use tracing::Span;
-use tracing_futures::Instrument;
+use std::future::Future;
 
-/// The ActixJob trait defines parameters pertaining to an instance of background job
+use anyhow::Error;
+use background_jobs_core::{Backoff, JoinError, MaxRetries, UnsendJob, UnsendSpawner};
+use serde::{de::DeserializeOwned, ser::Serialize};
+use tracing::Span;
+
+pub struct ActixSpawner;
+
+#[doc(hidden)]
+pub struct ActixHandle<T>(actix_rt::task::JoinHandle<T>);
+
+impl UnsendSpawner for ActixSpawner {
+    type Handle<T> = ActixHandle<T> where T: Send;
+
+    fn spawn<Fut>(future: Fut) -> Self::Handle<Fut::Output>
+    where
+        Fut: Future + 'static,
+        Fut::Output: Send + 'static,
+    {
+        ActixHandle(actix_rt::spawn(future))
+    }
+}
+
+impl<T> Unpin for ActixHandle<T> {}
+
+impl<T> Future for ActixHandle<T> {
+    type Output = Result<T, JoinError>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let res = std::task::ready!(std::pin::Pin::new(&mut self.0).poll(cx));
+
+        std::task::Poll::Ready(res.map_err(|_| JoinError))
+    }
+}
+
+impl<T> Drop for ActixHandle<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// The UnsendJob trait defines parameters pertaining to an instance of a background job
 ///
-/// This trait is specific to Actix, and will automatically implement the Job trait with the
-/// proper translation from ?Send futures to Send futures
-pub trait ActixJob: Serialize + DeserializeOwned + 'static {
+/// This trait is used to implement generic Unsend Jobs in the background jobs library. It requires
+/// that implementors specify a spawning mechanism that can turn an Unsend future into a Send
+/// future
+pub trait ActixJob: Serialize + DeserializeOwned + std::panic::UnwindSafe + 'static {
     /// The application state provided to this job at runtime.
     type State: Clone + 'static;
 
@@ -101,59 +134,69 @@ pub trait ActixJob: Serialize + DeserializeOwned + 'static {
     }
 }
 
-#[doc(hidden)]
-pub struct UnwrapFuture<F>(F);
-
-impl<F, T, E> Future for UnwrapFuture<F>
-where
-    F: Future<Output = Result<T, E>> + Unpin,
-    E: Debug,
-{
-    type Output = T;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.0).poll(cx).map(|res| res.unwrap())
+/// Provide helper methods for queuing ActixJobs
+pub trait ActixJobExt: ActixJob {
+    /// Turn an ActixJob into a type that implements Job
+    fn into_job(self) -> ActixJobWrapper<Self>
+    where
+        Self: Sized,
+    {
+        ActixJobWrapper(self)
     }
 }
 
-impl<T> Job for T
-where
-    T: ActixJob + std::panic::UnwindSafe,
-{
-    type State = T::State;
-    type Future = UnwrapFuture<JoinHandle<Result<(), Error>>>;
+impl<T> ActixJobExt for T where T: ActixJob {}
 
-    const NAME: &'static str = <Self as ActixJob>::NAME;
-    const QUEUE: &'static str = <Self as ActixJob>::QUEUE;
-    const MAX_RETRIES: MaxRetries = <Self as ActixJob>::MAX_RETRIES;
-    const BACKOFF: Backoff = <Self as ActixJob>::BACKOFF;
-    const TIMEOUT: i64 = <Self as ActixJob>::TIMEOUT;
+impl<T> From<T> for ActixJobWrapper<T>
+where
+    T: ActixJob,
+{
+    fn from(value: T) -> Self {
+        ActixJobWrapper(value)
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+// A wrapper for ActixJob implementing UnsendJob with an ActixSpawner
+pub struct ActixJobWrapper<T>(T);
+
+impl<T> UnsendJob for ActixJobWrapper<T>
+where
+    T: ActixJob,
+{
+    type State = <T as ActixJob>::State;
+
+    type Future = <T as ActixJob>::Future;
+
+    type Spawner = ActixSpawner;
+
+    const NAME: &'static str = <T as ActixJob>::NAME;
+    const QUEUE: &'static str = <T as ActixJob>::QUEUE;
+    const MAX_RETRIES: MaxRetries = <T as ActixJob>::MAX_RETRIES;
+    const BACKOFF: Backoff = <T as ActixJob>::BACKOFF;
+    const TIMEOUT: i64 = <T as ActixJob>::TIMEOUT;
 
     fn run(self, state: Self::State) -> Self::Future {
-        let fut = ActixJob::run(self, state);
-        let instrumented = fut.instrument(Span::current());
-        let handle = actix_rt::spawn(instrumented);
-
-        UnwrapFuture(handle)
+        <T as ActixJob>::run(self.0, state)
     }
 
     fn span(&self) -> Option<Span> {
-        ActixJob::span(self)
+        self.0.span()
     }
 
     fn queue(&self) -> &str {
-        ActixJob::queue(self)
+        self.0.queue()
     }
 
     fn max_retries(&self) -> MaxRetries {
-        ActixJob::max_retries(self)
+        self.0.max_retries()
     }
 
     fn backoff_strategy(&self) -> Backoff {
-        ActixJob::backoff_strategy(self)
+        self.0.backoff_strategy()
     }
 
     fn timeout(&self) -> i64 {
-        ActixJob::timeout(self)
+        self.0.timeout()
     }
 }

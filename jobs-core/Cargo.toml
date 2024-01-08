@@ -11,15 +11,13 @@ edition = "2021"
 
 [features]
 default = ["error-logging"]
-with-actix = ["actix-rt"]
 completion-logging = []
 error-logging = []
 
 [dependencies]
-actix-rt = { version = "2.3.0", optional = true }
 anyhow = "1.0"
 async-trait = "0.1.24"
-event-listener = "2"
+event-listener = "4"
 metrics = "0.22.0"
 time = { version = "0.3", features = ["serde-human-readable"] }
 tracing = "0.1"
@@ -27,4 +25,4 @@ tracing-futures = "0.2.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
-uuid = { version = "1", features = ["serde", "v4"] }
+uuid = { version = "1.6", features = ["serde", "v7"] }

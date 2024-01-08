@@ -86,7 +86,7 @@ where
         let fut = async move {
             let opt = self
                 .inner
-                .get(job.name())
+                .get(&job.name)
                 .map(|name| process(Arc::clone(name), (self.state_fn)(), job.clone()));
 
             let res = if let Some(fut) = opt {
@@ -102,7 +102,7 @@ where
                     &tracing::field::display("Not registered"),
                 );
                 tracing::error!("Not registered");
-                ReturnJobInfo::unregistered(job.id())
+                ReturnJobInfo::unregistered(job.id)
             };
 
             res
@@ -124,7 +124,7 @@ where
         let span = job_span(&job);
 
         let fut = async move {
-            let res = if let Some(name) = self.inner.get(job.name()) {
+            let res = if let Some(name) = self.inner.get(&job.name) {
                 process(Arc::clone(name), self.state.clone(), job).await
             } else {
                 let span = Span::current();
@@ -137,7 +137,7 @@ where
                     &tracing::field::display("Not registered"),
                 );
                 tracing::error!("Not registered");
-                ReturnJobInfo::unregistered(job.id())
+                ReturnJobInfo::unregistered(job.id)
             };
 
             res
@@ -150,9 +150,9 @@ where
 fn job_span(job: &JobInfo) -> Span {
     tracing::info_span!(
         "Job",
-        execution_id = tracing::field::display(&Uuid::new_v4()),
-        job.id = tracing::field::display(&job.id()),
-        job.name = tracing::field::display(&job.name()),
+        execution_id = tracing::field::display(&Uuid::now_v7()),
+        job.id = tracing::field::display(&job.id),
+        job.name = tracing::field::display(&job.name),
         job.execution_time = tracing::field::Empty,
         exception.message = tracing::field::Empty,
         exception.details = tracing::field::Empty,
@@ -163,8 +163,8 @@ async fn process<S>(process_fn: ProcessFn<S>, state: S, job: JobInfo) -> ReturnJ
 where
     S: Clone,
 {
-    let args = job.args();
-    let id = job.id();
+    let args = job.args.clone();
+    let id = job.id;
 
     let start = Instant::now();
 
@@ -177,7 +177,7 @@ where
 
     let span = Span::current();
     span.record("job.execution_time", &tracing::field::display(&seconds));
-    metrics::histogram!("background-jobs.job.execution_time", "queue" => job.queue().to_string(), "name" => job.name().to_string()).record(seconds);
+    metrics::histogram!("background-jobs.job.execution_time", "queue" => job.queue.clone(), "name" => job.name.clone()).record(seconds);
 
     match res {
         Ok(Ok(_)) => {

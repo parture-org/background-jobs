@@ -8,13 +8,12 @@
 
 use anyhow::Error;
 
-#[cfg(feature = "with-actix")]
-mod actix_job;
 mod catch_unwind;
 mod job;
 mod job_info;
 mod processor_map;
 mod storage;
+mod unsend_job;
 
 pub use crate::{
     job::{new_job, new_scheduled_job, process, Job},
@@ -23,8 +22,7 @@ pub use crate::{
     storage::{memory_storage, Storage},
 };
 
-#[cfg(feature = "with-actix")]
-pub use actix_job::ActixJob;
+pub use unsend_job::{JoinError, UnsendJob, UnsendSpawner};
 
 #[derive(Debug, thiserror::Error)]
 /// The error type returned by the `process` method

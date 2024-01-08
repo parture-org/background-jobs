@@ -4,11 +4,13 @@ use uuid::Uuid;
 
 #[async_trait::async_trait]
 pub(crate) trait ActixStorage {
-    async fn new_job(&self, job: NewJobInfo) -> Result<Uuid, Error>;
+    async fn push(&self, job: NewJobInfo) -> Result<Uuid, Error>;
 
-    async fn request_job(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Error>;
+    async fn pop(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Error>;
 
-    async fn return_job(&self, ret: ReturnJobInfo) -> Result<(), Error>;
+    async fn heartbeat(&self, job_id: Uuid, runner_id: Uuid) -> Result<(), Error>;
+
+    async fn complete(&self, ret: ReturnJobInfo) -> Result<(), Error>;
 }
 
 pub(crate) struct StorageWrapper<S>(pub(crate) S)
@@ -22,15 +24,19 @@ where
     S: Storage + Send + Sync,
     S::Error: Send + Sync + 'static,
 {
-    async fn new_job(&self, job: NewJobInfo) -> Result<Uuid, Error> {
-        Ok(self.0.new_job(job).await?)
+    async fn push(&self, job: NewJobInfo) -> Result<Uuid, Error> {
+        Ok(self.0.push(job).await?)
     }
 
-    async fn request_job(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Error> {
-        Ok(self.0.request_job(queue, runner_id).await?)
+    async fn pop(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Error> {
+        Ok(self.0.pop(queue, runner_id).await?)
     }
 
-    async fn return_job(&self, ret: ReturnJobInfo) -> Result<(), Error> {
-        Ok(self.0.return_job(ret).await?)
+    async fn heartbeat(&self, job_id: Uuid, runner_id: Uuid) -> Result<(), Error> {
+        Ok(self.0.heartbeat(job_id, runner_id).await?)
+    }
+
+    async fn complete(&self, ret: ReturnJobInfo) -> Result<(), Error> {
+        Ok(self.0.complete(ret).await?)
     }
 }

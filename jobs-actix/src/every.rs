@@ -1,4 +1,4 @@
-use crate::{Job, QueueHandle};
+use crate::{ActixJob, QueueHandle};
 use actix_rt::time::{interval_at, Instant};
 use std::time::Duration;
 
@@ -10,7 +10,7 @@ use std::time::Duration;
 /// ```
 pub(crate) async fn every<J>(spawner: QueueHandle, duration: Duration, job: J)
 where
-    J: Job + Clone + Send,
+    J: ActixJob + Clone + Send,
 {
     let mut interval = interval_at(Instant::now(), duration);
 

@@ -1,8 +1,8 @@
+use std::{ops::Deref, sync::Arc};
+
+use background_jobs_core::Storage;
+
 use crate::storage::{ActixStorage, StorageWrapper};
-use anyhow::Error;
-use background_jobs_core::{JobInfo, NewJobInfo, ReturnJobInfo, Storage};
-use std::sync::Arc;
-use uuid::Uuid;
 
 /// The server Actor
 ///
@@ -23,21 +23,12 @@ impl Server {
             storage: Arc::new(StorageWrapper(storage)),
         }
     }
+}
 
-    pub(crate) async fn new_job(&self, job: NewJobInfo) -> Result<(), Error> {
-        self.storage.new_job(job).await.map(|_| ())
-    }
+impl Deref for Server {
+    type Target = dyn ActixStorage;
 
-    pub(crate) async fn request_job(
-        &self,
-        worker_id: Uuid,
-        worker_queue: &str,
-    ) -> Result<JobInfo, Error> {
-        tracing::trace!("Worker {} requested job", worker_id);
-        self.storage.request_job(worker_queue, worker_id).await
-    }
-
-    pub(crate) async fn return_job(&self, job: ReturnJobInfo) -> Result<(), Error> {
-        self.storage.return_job(job).await
+    fn deref(&self) -> &Self::Target {
+        self.storage.as_ref()
     }
 }

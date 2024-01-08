@@ -93,7 +93,7 @@ pub(crate) async fn local_worker<State, Extras>(
         extras: Some(extras),
     };
 
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
 
     let log_on_drop = RunOnDrop(|| {
         make_span(id, &queue, "closing").in_scope(|| tracing::warn!("Worker closing"));
@@ -103,7 +103,7 @@ pub(crate) async fn local_worker<State, Extras>(
         let request_span = make_span(id, &queue, "request");
 
         let job = match request_span
-            .in_scope(|| server.request_job(id, &queue))
+            .in_scope(|| server.pop(&queue, id))
             .instrument(request_span.clone())
             .await
         {
@@ -123,7 +123,7 @@ pub(crate) async fn local_worker<State, Extras>(
         drop(request_span);
 
         let process_span = make_span(id, &queue, "process");
-        let job_id = job.id();
+        let job_id = job.id;
         let return_job = process_span
             .in_scope(|| time_job(Box::pin(processors.process(job)), job_id))
             .instrument(process_span)
@@ -131,7 +131,7 @@ pub(crate) async fn local_worker<State, Extras>(
 
         let return_span = make_span(id, &queue, "return");
         if let Err(e) = return_span
-            .in_scope(|| server.return_job(return_job))
+            .in_scope(|| server.complete(return_job))
             .instrument(return_span.clone())
             .await
         {
@@ -156,7 +156,7 @@ fn make_span(id: Uuid, queue: &str, operation: &str) -> Span {
         "Worker",
         worker.id = tracing::field::display(id),
         worker.queue = tracing::field::display(queue),
-        worker.operation.id = tracing::field::display(&Uuid::new_v4()),
+        worker.operation.id = tracing::field::display(&Uuid::now_v7()),
         worker.operation.name = tracing::field::display(operation),
         exception.message = tracing::field::Empty,
         exception.details = tracing::field::Empty,
