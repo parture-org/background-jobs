@@ -83,34 +83,31 @@ pub mod memory_storage {
             }
         }
 
-        fn listener(&self, queue: String) -> (Pin<Box<EventListener>>, Duration) {
+        fn listener(&self, pop_queue: String) -> (Pin<Box<EventListener>>, Duration) {
             let lower_bound = Uuid::new_v7(Timestamp::from_unix(NoContext, 0, 0));
-            let upper_bound = Uuid::now_v7();
+            let now = OffsetDateTime::now_utc();
 
             let mut inner = self.inner.lock().unwrap();
 
-            let listener = inner.queues.entry(queue.clone()).or_default().listen();
+            let listener = inner.queues.entry(pop_queue.clone()).or_default().listen();
 
-            let next_job = inner
+            let duration = inner
                 .queue_jobs
                 .range((
-                    Bound::Excluded((queue.clone(), lower_bound)),
-                    Bound::Included((queue, upper_bound)),
+                    Bound::Excluded((pop_queue.clone(), lower_bound)),
+                    Bound::Unbounded,
                 ))
-                .find_map(|(_, (id, meta))| {
-                    if meta.is_none() {
-                        inner.jobs.get(id)
+                .filter(|(_, (_, meta))| meta.is_none())
+                .filter_map(|(_, (id, _))| inner.jobs.get(id))
+                .take_while(|JobInfo { queue, .. }| queue.as_str() == pop_queue.as_str())
+                .map(|JobInfo { next_queue, .. }| {
+                    if *next_queue > now {
+                        *next_queue - now
                     } else {
-                        None
+                        time::Duration::seconds(0)
                     }
-                });
-
-            let duration = if let Some(job) = next_job {
-                let duration = OffsetDateTime::now_utc() - job.next_queue;
-                duration.try_into().ok()
-            } else {
-                None
-            };
+                })
+                .find_map(|duration| duration.try_into().ok());
 
             (listener, duration.unwrap_or(Duration::from_secs(10)))
         }
@@ -188,7 +185,9 @@ pub mod memory_storage {
             }
 
             if let Some(key) = key {
-                inner.queue_jobs.remove(&key);
+                if inner.queue_jobs.remove(&key).is_none() {
+                    tracing::warn!("failed to remove {key:?}");
+                }
             }
 
             Some(job)

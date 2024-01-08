@@ -7,8 +7,10 @@ use uuid::{NoContext, Timestamp, Uuid};
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 /// Information about the sate of an attempted job
 pub struct ReturnJobInfo {
-    pub(crate) id: Uuid,
-    pub(crate) result: JobResult,
+    /// The ID of the job being returned
+    pub id: Uuid,
+    /// The result status of the job
+    pub result: JobResult,
 }
 
 impl ReturnJobInfo {
@@ -95,7 +97,8 @@ impl NewJobInfo {
         self.next_queue.is_none()
     }
 
-    pub(crate) fn build(self) -> JobInfo {
+    /// Construct a JobInfo from a NewJobInfo
+    pub fn build(self) -> JobInfo {
         JobInfo {
             id: Uuid::now_v7(),
             name: self.name,
