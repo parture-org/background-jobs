@@ -16,8 +16,10 @@ async-trait = "0.1.24"
 background-jobs-core = { version = "0.16.0", path = "../jobs-core" }
 bincode = "1.2"
 sled = "0.34"
+serde = { version = "1", features = ["derive"] }
 serde_cbor = "0.11"
+time = { version = "0.3", features = ["serde-human-readable"] }
 thiserror = "1.0"
 tokio = { version = "1", default-features = false, features = ["rt", "sync"] }
 tracing = "0.1"
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v7", "serde"] }
