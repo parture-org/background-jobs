@@ -37,6 +37,8 @@ where
     }
 
     async fn complete(&self, ret: ReturnJobInfo) -> Result<(), Error> {
-        Ok(self.0.complete(ret).await?)
+        self.0.complete(ret).await?;
+
+        Ok(())
     }
 }
