@@ -48,7 +48,7 @@ impl<T> Drop for ActixHandle<T> {
 /// This trait is used to implement generic Unsend Jobs in the background jobs library. It requires
 /// that implementors specify a spawning mechanism that can turn an Unsend future into a Send
 /// future
-pub trait ActixJob: Serialize + DeserializeOwned + std::panic::UnwindSafe + 'static {
+pub trait ActixJob: Serialize + DeserializeOwned + 'static {
     /// The application state provided to this job at runtime.
     type State: Clone + 'static;
 

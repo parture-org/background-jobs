@@ -148,7 +148,7 @@ where
 
 impl<T> Job for T
 where
-    T: UnsendJob + std::panic::UnwindSafe,
+    T: UnsendJob,
 {
     type State = T::State;
     type Future = UnwrapFuture<<T::Spawner as UnsendSpawner>::Handle<Result<(), Error>>>;
