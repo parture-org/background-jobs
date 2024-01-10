@@ -84,7 +84,7 @@ pub trait UnsendJob: Serialize + DeserializeOwned + 'static {
     ///
     /// Defaults to 15 seconds
     /// Jobs can override
-    const TIMEOUT: i64 = 15_000;
+    const TIMEOUT: u64 = 15_000;
 
     /// Users of this library must define what it means to run a job.
     ///
@@ -125,7 +125,7 @@ pub trait UnsendJob: Serialize + DeserializeOwned + 'static {
     ///
     /// This is important for allowing the job server to reap processes that were started but never
     /// completed.
-    fn timeout(&self) -> i64 {
+    fn timeout(&self) -> u64 {
         Self::TIMEOUT
     }
 }
@@ -156,7 +156,7 @@ where
     const QUEUE: &'static str = <Self as UnsendJob>::QUEUE;
     const MAX_RETRIES: MaxRetries = <Self as UnsendJob>::MAX_RETRIES;
     const BACKOFF: Backoff = <Self as UnsendJob>::BACKOFF;
-    const TIMEOUT: i64 = <Self as UnsendJob>::TIMEOUT;
+    const TIMEOUT: u64 = <Self as UnsendJob>::TIMEOUT;
 
     fn run(self, state: Self::State) -> Self::Future {
         UnwrapFuture(T::Spawner::spawn(
@@ -180,7 +180,7 @@ where
         UnsendJob::backoff_strategy(self)
     }
 
-    fn timeout(&self) -> i64 {
+    fn timeout(&self) -> u64 {
         UnsendJob::timeout(self)
     }
 }

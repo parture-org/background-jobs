@@ -188,3 +188,8 @@ pub mod memory_storage {
 
 #[cfg(feature = "background-jobs-actix")]
 pub use background_jobs_actix::{ActixSpawner, Manager, QueueHandle, WorkerConfig};
+
+#[cfg(feature = "background-jobs-postgres")]
+pub mod postgres {
+    pub use background_jobs_postgres::Storage;
+}

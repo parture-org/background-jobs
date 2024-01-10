@@ -60,7 +60,7 @@ pub struct NewJobInfo {
     /// Milliseconds from execution until the job is considered dead
     ///
     /// This is important for storage implementations to reap unfinished jobs
-    timeout: i64,
+    timeout: u64,
 }
 
 impl NewJobInfo {
@@ -73,7 +73,7 @@ impl NewJobInfo {
         queue: String,
         max_retries: MaxRetries,
         backoff_strategy: Backoff,
-        timeout: i64,
+        timeout: u64,
         args: Value,
     ) -> Self {
         NewJobInfo {
@@ -113,7 +113,6 @@ impl NewJobInfo {
             max_retries: self.max_retries,
             next_queue: self.next_queue.unwrap_or(OffsetDateTime::now_utc()),
             backoff_strategy: self.backoff_strategy,
-            updated_at: OffsetDateTime::now_utc(),
             timeout: self.timeout,
         }
     }
@@ -157,13 +156,10 @@ pub struct JobInfo {
     /// The time this job should be dequeued
     pub next_queue: OffsetDateTime,
 
-    /// The time this job was last updated
-    pub updated_at: OffsetDateTime,
-
     /// Milliseconds from execution until the job is considered dead
     ///
     /// This is important for storage implementations to reap unfinished jobs
-    pub timeout: i64,
+    pub timeout: u64,
 }
 
 impl JobInfo {
@@ -182,7 +178,6 @@ impl JobInfo {
 
     // Increment the retry-count and determine if the job should be requeued
     fn increment(&mut self) -> ShouldStop {
-        self.updated_at = OffsetDateTime::now_utc();
         self.retry_count += 1;
         self.max_retries.compare(self.retry_count)
     }

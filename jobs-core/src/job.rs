@@ -82,7 +82,7 @@ pub trait Job: Serialize + DeserializeOwned + 'static {
     ///
     /// Defaults to 15 seconds
     /// Jobs can override
-    const TIMEOUT: i64 = 15_000;
+    const TIMEOUT: u64 = 15_000;
 
     /// Users of this library must define what it means to run a job.
     ///
@@ -123,7 +123,7 @@ pub trait Job: Serialize + DeserializeOwned + 'static {
     ///
     /// This is important for allowing the job server to reap processes that were started but never
     /// completed.
-    fn timeout(&self) -> i64 {
+    fn timeout(&self) -> u64 {
         Self::TIMEOUT
     }
 }

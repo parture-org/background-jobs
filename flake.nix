@@ -17,7 +17,17 @@
         packages.default = pkgs.hello;
 
         devShell = with pkgs; mkShell {
-          nativeBuildInputs = [ cargo cargo-outdated cargo-zigbuild clippy gcc protobuf rust-analyzer rustc rustfmt ];
+          nativeBuildInputs = [
+            cargo
+            cargo-outdated
+            clippy
+            diesel-cli
+            rust-analyzer
+            rustc
+            rustfmt
+            stdenv.cc
+            taplo
+          ];
 
           RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
         };

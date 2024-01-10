@@ -14,12 +14,14 @@ members = [
   "jobs-actix",
   "jobs-core",
   "jobs-metrics",
+  "jobs-postgres",
   "jobs-sled",
   "examples/basic-example",
   "examples/long-example",
   "examples/managed-example",
   "examples/metrics-example",
   "examples/panic-example",
+  "examples/postgres-example",
 ]
 
 [features]
@@ -44,4 +46,9 @@ optional = true
 [dependencies.background-jobs-metrics]
 version = "0.17.0"
 path = "jobs-metrics"
+optional = true
+
+[dependencies.background-jobs-postgres]
+version = "0.17.0"
+path = "jobs-postgres"
 optional = true
