@@ -133,22 +133,20 @@ impl background_jobs_core::Storage for Storage {
         };
 
         match result {
-            JobResult::Success => {
-                // ok
-                Ok(true)
-            }
+            // successful jobs are removed
+            JobResult::Success => Ok(true),
+            // Unregistered or Unexecuted jobs are restored as-is
             JobResult::Unexecuted | JobResult::Unregistered => {
-                // TODO: handle
-                Ok(true)
+                self.insert(job)?;
+                Ok(false)
             }
-            JobResult::Failure => {
-                if job.prepare_retry() {
-                    self.insert(job)?;
-                    Ok(false)
-                } else {
-                    Ok(true)
-                }
+            // retryable failed jobs are restored
+            JobResult::Failure if job.prepare_retry() => {
+                self.insert(job)?;
+                Ok(false)
             }
+            // dead jobs are removed
+            JobResult::Failure => Ok(true),
         }
     }
 }
