@@ -60,7 +60,7 @@ pub struct NewJobInfo {
     /// Milliseconds from execution until the job is considered dead
     ///
     /// This is important for storage implementations to reap unfinished jobs
-    timeout: u64,
+    heartbeat_interval: u64,
 }
 
 impl NewJobInfo {
@@ -73,7 +73,7 @@ impl NewJobInfo {
         queue: String,
         max_retries: MaxRetries,
         backoff_strategy: Backoff,
-        timeout: u64,
+        heartbeat_interval: u64,
         args: Value,
     ) -> Self {
         NewJobInfo {
@@ -83,7 +83,7 @@ impl NewJobInfo {
             max_retries,
             next_queue: None,
             backoff_strategy,
-            timeout,
+            heartbeat_interval,
         }
     }
 
@@ -113,7 +113,7 @@ impl NewJobInfo {
             max_retries: self.max_retries,
             next_queue: self.next_queue.unwrap_or(OffsetDateTime::now_utc()),
             backoff_strategy: self.backoff_strategy,
-            timeout: self.timeout,
+            heartbeat_interval: self.heartbeat_interval,
         }
     }
 }
@@ -159,7 +159,7 @@ pub struct JobInfo {
     /// Milliseconds from execution until the job is considered dead
     ///
     /// This is important for storage implementations to reap unfinished jobs
-    pub timeout: u64,
+    pub heartbeat_interval: u64,
 }
 
 impl JobInfo {

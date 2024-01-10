@@ -272,16 +272,20 @@ pub mod memory_storage {
             };
 
             match result {
+                // successful jobs are removed
                 JobResult::Success => Ok(true),
-                JobResult::Unregistered | JobResult::Unexecuted => Ok(true),
-                JobResult::Failure => {
-                    if job.prepare_retry() {
-                        self.insert(job);
-                        return Ok(false);
-                    } else {
-                        Ok(true)
-                    }
+                // Unregistered or Unexecuted jobs are restored as-is
+                JobResult::Unregistered | JobResult::Unexecuted => {
+                    self.insert(job);
+                    Ok(false)
                 }
+                // retryable failed jobs are restored
+                JobResult::Failure if job.prepare_retry() => {
+                    self.insert(job);
+                    Ok(false)
+                }
+                // dead jobs are removed
+                JobResult::Failure => Ok(true),
             }
         }
     }

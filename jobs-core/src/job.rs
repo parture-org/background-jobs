@@ -74,15 +74,14 @@ pub trait Job: Serialize + DeserializeOwned + 'static {
     /// Jobs can override
     const BACKOFF: Backoff = Backoff::Exponential(2);
 
-    /// Define the maximum number of milliseconds a job should be allowed to run before being
-    /// considered dead.
+    /// Define how often a job should update its heartbeat timestamp
     ///
     /// This is important for allowing the job server to reap processes that were started but never
     /// completed.
     ///
-    /// Defaults to 15 seconds
+    /// Defaults to 5 seconds
     /// Jobs can override
-    const TIMEOUT: u64 = 15_000;
+    const HEARTBEAT_INTERVAL: u64 = 5_000;
 
     /// Users of this library must define what it means to run a job.
     ///
@@ -118,13 +117,12 @@ pub trait Job: Serialize + DeserializeOwned + 'static {
         Self::BACKOFF
     }
 
-    /// Define the maximum number of milliseconds this job should be allowed to run before being
-    /// considered dead.
+    /// Define how often a job should update its heartbeat timestamp
     ///
     /// This is important for allowing the job server to reap processes that were started but never
     /// completed.
-    fn timeout(&self) -> u64 {
-        Self::TIMEOUT
+    fn heartbeat_interval(&self) -> u64 {
+        Self::HEARTBEAT_INTERVAL
     }
 }
 
@@ -138,7 +136,7 @@ where
         job.queue().to_owned(),
         job.max_retries(),
         job.backoff_strategy(),
-        job.timeout(),
+        job.heartbeat_interval(),
         serde_json::to_value(job).map_err(|_| ToJson)?,
     );
 
