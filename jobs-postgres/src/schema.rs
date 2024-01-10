@@ -31,7 +31,7 @@ diesel::table! {
         backoff_multiplier -> Int4,
         backoff -> BackoffStrategy,
         next_queue -> Timestamp,
-        timeout -> Int4,
+        heartbeat_interval -> Interval,
         runner_id -> Nullable<Uuid>,
         status -> JobStatus,
         heartbeat -> Nullable<Timestamp>,

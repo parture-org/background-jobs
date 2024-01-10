@@ -10,19 +10,24 @@ use std::{
     time::Duration,
 };
 
-use background_jobs_core::{Backoff, JobInfo, MaxRetries, NewJobInfo, ReturnJobInfo};
+use background_jobs_core::{Backoff, JobInfo, JobResult, MaxRetries, NewJobInfo, ReturnJobInfo};
 use dashmap::DashMap;
-use diesel::prelude::*;
+use diesel::{
+    data_types::PgInterval,
+    dsl::IntervalDsl,
+    prelude::*,
+    sql_types::{Interval, Timestamp},
+};
 use diesel_async::{
     pooled_connection::{
         deadpool::{BuildError, Hook, Pool, PoolError},
         AsyncDieselConnectionManager, ManagerConfig,
     },
-    AsyncConnection, AsyncPgConnection, RunQueryDsl,
+    AsyncPgConnection, RunQueryDsl,
 };
 use futures_core::future::BoxFuture;
 use serde_json::Value;
-use time::{OffsetDateTime, PrimitiveDateTime};
+use time::PrimitiveDateTime;
 use tokio::{sync::Notify, task::JoinHandle};
 use tokio_postgres::{tls::NoTlsStream, AsyncMessage, Connection, NoTls, Notification, Socket};
 use tracing::Instrument;
@@ -122,7 +127,7 @@ struct PostgresJob {
     backoff_multiplier: i32,
     backoff: BackoffStrategy,
     next_queue: PrimitiveDateTime,
-    timeout: i32,
+    heartbeat_interval: PgInterval,
 }
 
 impl From<JobInfo> for PostgresJob {
@@ -136,8 +141,10 @@ impl From<JobInfo> for PostgresJob {
             max_retries,
             backoff_strategy,
             next_queue,
-            timeout,
+            heartbeat_interval,
         } = value;
+
+        let next_queue = next_queue.to_offset(time::UtcOffset::UTC);
 
         PostgresJob {
             id,
@@ -162,7 +169,7 @@ impl From<JobInfo> for PostgresJob {
                 Backoff::Exponential(_) => BackoffStrategy::Exponential,
             },
             next_queue: PrimitiveDateTime::new(next_queue.date(), next_queue.time()),
-            timeout: timeout as _,
+            heartbeat_interval: (heartbeat_interval as i32).milliseconds(),
         }
     }
 }
@@ -180,7 +187,7 @@ impl From<PostgresJob> for JobInfo {
             backoff_multiplier,
             backoff,
             next_queue,
-            timeout,
+            heartbeat_interval,
         } = value;
 
         JobInfo {
@@ -198,7 +205,7 @@ impl From<PostgresJob> for JobInfo {
                 BackoffStrategy::Exponential => Backoff::Exponential(backoff_multiplier as _),
             },
             next_queue: next_queue.assume_utc(),
-            timeout: timeout as _,
+            heartbeat_interval: (heartbeat_interval.microseconds / 1_000) as _,
         }
     }
 }
@@ -233,42 +240,134 @@ impl background_jobs_core::Storage for Storage {
     }
 
     async fn push(&self, job: NewJobInfo) -> Result<Uuid, Self::Error> {
-        let postgres_job: PostgresJob = job.build().into();
-        let id = postgres_job.id;
+        self.insert(job.build()).await
+    }
 
-        let mut conn = self.inner.pool.get().await.map_err(PostgresError::Pool)?;
+    async fn pop(&self, in_queue: &str, in_runner_id: Uuid) -> Result<JobInfo, Self::Error> {
+        loop {
+            tracing::trace!("pop: looping");
 
-        {
-            use schema::job_queue::dsl::*;
+            let mut conn = self.inner.pool.get().await.map_err(PostgresError::Pool)?;
 
-            postgres_job
-                .insert_into(job_queue)
+            let notifier: Arc<Notify> = self
+                .inner
+                .queue_notifications
+                .entry(String::from(in_queue))
+                .or_insert_with(|| Arc::new(Notify::const_new()))
+                .clone();
+
+            diesel::sql_query("LISTEN queue_status_channel;")
                 .execute(&mut conn)
                 .await
                 .map_err(PostgresError::Diesel)?;
+
+            let count = {
+                use schema::job_queue::dsl::*;
+
+                diesel::update(job_queue)
+                    .filter(heartbeat.is_not_null().and(heartbeat.assume_not_null().le(
+                        // not allowed to multiply heartbeat_interval. thanks diesel
+                        diesel::dsl::sql::<Timestamp>("NOW() - heartbeat_interval * 5"),
+                    )))
+                    .set((
+                        heartbeat.eq(Option::<PrimitiveDateTime>::None),
+                        status.eq(JobStatus::New),
+                        runner_id.eq(Option::<Uuid>::None),
+                    ))
+                    .execute(&mut conn)
+                    .await
+                    .map_err(PostgresError::Diesel)?
+            };
+
+            if count > 0 {
+                tracing::info!("Reset {count} jobs");
+            }
+
+            let id_query = {
+                use schema::job_queue::dsl::*;
+
+                let queue_alias = diesel::alias!(schema::job_queue as queue_alias);
+
+                queue_alias
+                    .select(queue_alias.field(id))
+                    .filter(
+                        queue_alias
+                            .field(status)
+                            .eq(JobStatus::New)
+                            .and(queue_alias.field(queue).eq(in_queue))
+                            .and(queue_alias.field(next_queue).le(diesel::dsl::now)),
+                    )
+                    .order(queue_alias.field(next_queue))
+                    .for_update()
+                    .skip_locked()
+                    .single_value()
+            };
+
+            let opt = {
+                use schema::job_queue::dsl::*;
+
+                diesel::update(job_queue)
+                    .filter(id.nullable().eq(id_query))
+                    .filter(status.eq(JobStatus::New))
+                    .set((
+                        heartbeat.eq(diesel::dsl::now),
+                        status.eq(JobStatus::Running),
+                        runner_id.eq(in_runner_id),
+                    ))
+                    .returning(PostgresJob::as_returning())
+                    .get_result(&mut conn)
+                    .await
+                    .optional()
+                    .map_err(PostgresError::Diesel)?
+            };
+
+            if let Some(postgres_job) = opt {
+                return Ok(postgres_job.into());
+            }
+
+            let next_queue = {
+                use schema::job_queue::dsl::*;
+
+                job_queue
+                    .filter(queue.eq(in_queue).and(status.eq(JobStatus::New)))
+                    .select(diesel::dsl::sql::<Interval>("NOW() - next_queue"))
+                    .get_result::<PgInterval>(&mut conn)
+                    .await
+                    .optional()
+                    .map_err(PostgresError::Diesel)?
+            };
+
+            let sleep_duration = next_queue
+                .map(|interval| {
+                    if interval.microseconds < 0 {
+                        Duration::from_micros(interval.microseconds.abs_diff(0))
+                    } else {
+                        Duration::from_secs(0)
+                    }
+                })
+                .unwrap_or(Duration::from_secs(5));
+
+            drop(conn);
+            if tokio::time::timeout(sleep_duration, notifier.notified())
+                .await
+                .is_ok()
+            {
+                tracing::debug!("Notified");
+            } else {
+                tracing::debug!("Timed out");
+            }
         }
-
-        Ok(id)
-    }
-
-    async fn pop(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Self::Error> {
-        todo!()
     }
 
     async fn heartbeat(&self, job_id: Uuid, in_runner_id: Uuid) -> Result<(), Self::Error> {
         let mut conn = self.inner.pool.get().await.map_err(PostgresError::Pool)?;
-
-        let now = to_primitive(OffsetDateTime::now_utc());
 
         {
             use schema::job_queue::dsl::*;
 
             diesel::update(job_queue)
                 .filter(id.eq(job_id))
-                .set((
-                    heartbeat.eq(PrimitiveDateTime::new(now.date(), now.time())),
-                    runner_id.eq(in_runner_id),
-                ))
+                .set((heartbeat.eq(diesel::dsl::now), runner_id.eq(in_runner_id)))
                 .execute(&mut conn)
                 .await
                 .map_err(PostgresError::Diesel)?;
@@ -278,13 +377,45 @@ impl background_jobs_core::Storage for Storage {
     }
 
     async fn complete(&self, return_job_info: ReturnJobInfo) -> Result<bool, Self::Error> {
-        todo!()
-    }
-}
+        let mut conn = self.inner.pool.get().await.map_err(PostgresError::Pool)?;
 
-fn to_primitive(timestamp: OffsetDateTime) -> PrimitiveDateTime {
-    let timestamp = timestamp.to_offset(time::UtcOffset::UTC);
-    PrimitiveDateTime::new(timestamp.date(), timestamp.time())
+        let job = {
+            use schema::job_queue::dsl::*;
+
+            diesel::delete(job_queue)
+                .filter(id.eq(return_job_info.id))
+                .returning(PostgresJob::as_returning())
+                .get_result(&mut conn)
+                .await
+                .optional()
+                .map_err(PostgresError::Diesel)?
+        };
+
+        let mut job: JobInfo = if let Some(job) = job {
+            job.into()
+        } else {
+            return Ok(true);
+        };
+
+        match return_job_info.result {
+            // successful jobs are removed
+            JobResult::Success => Ok(true),
+            // Unregistered or Unexecuted jobs are restored as-is
+            JobResult::Unexecuted | JobResult::Unregistered => {
+                self.insert(job).await?;
+
+                Ok(false)
+            }
+            // retryable failed jobs are restored
+            JobResult::Failure if job.prepare_retry() => {
+                self.insert(job).await?;
+
+                Ok(false)
+            }
+            // dead jobs are removed
+            JobResult::Failure => Ok(true),
+        }
+    }
 }
 
 impl Storage {
@@ -347,6 +478,25 @@ impl Storage {
         let drop_handle = Arc::new(handle);
 
         Ok(Storage { inner, drop_handle })
+    }
+
+    async fn insert(&self, job_info: JobInfo) -> Result<Uuid, PostgresError> {
+        let postgres_job: PostgresJob = job_info.into();
+        let id = postgres_job.id;
+
+        let mut conn = self.inner.pool.get().await.map_err(PostgresError::Pool)?;
+
+        {
+            use schema::job_queue::dsl::*;
+
+            postgres_job
+                .insert_into(job_queue)
+                .execute(&mut conn)
+                .await
+                .map_err(PostgresError::Diesel)?;
+        }
+
+        Ok(id)
     }
 }
 

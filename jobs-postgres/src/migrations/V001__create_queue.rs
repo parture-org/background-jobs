@@ -21,7 +21,10 @@ pub(crate) fn migration() -> String {
         t.add_column("backoff_multiplier", types::integer().nullable(false));
         t.add_column("backoff", types::custom("backoff_strategy").nullable(false));
         t.add_column("next_queue", types::datetime().nullable(false));
-        t.add_column("timeout", types::integer().nullable(false));
+        t.add_column(
+            "heartbeat_interval",
+            types::custom("INTERVAL").nullable(false),
+        );
         t.add_column(
             "runner_id",
             types::uuid().nullable(true).indexed(false).unique(false),
