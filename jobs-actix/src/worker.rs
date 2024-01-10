@@ -55,8 +55,10 @@ async fn heartbeat_job<F: Future>(
     future: F,
     job_id: Uuid,
     runner_id: Uuid,
+    heartbeat_interval: u64,
 ) -> F::Output {
-    let mut interval = actix_rt::time::interval(std::time::Duration::from_secs(5));
+    let mut interval =
+        actix_rt::time::interval(std::time::Duration::from_millis(heartbeat_interval));
 
     let mut future = std::pin::pin!(future);
 
@@ -173,6 +175,7 @@ pub(crate) async fn local_worker<State, Extras>(
 
         let process_span = make_span(id, &queue, "process");
         let job_id = job.id;
+        let heartbeat_interval = job.heartbeat_interval;
         let return_job = process_span
             .in_scope(|| {
                 heartbeat_job(
@@ -180,6 +183,7 @@ pub(crate) async fn local_worker<State, Extras>(
                     time_job(processors.process(job), job_id),
                     job_id,
                     id,
+                    heartbeat_interval,
                 )
             })
             .instrument(process_span)
