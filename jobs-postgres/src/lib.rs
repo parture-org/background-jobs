@@ -217,6 +217,7 @@ impl From<PostgresJob> for JobInfo {
 impl background_jobs_core::Storage for Storage {
     type Error = PostgresError;
 
+    #[tracing::instrument]
     async fn info(
         &self,
         job_id: Uuid,
@@ -245,10 +246,12 @@ impl background_jobs_core::Storage for Storage {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     async fn push(&self, job: NewJobInfo) -> Result<Uuid, Self::Error> {
         self.insert(job.build()).await
     }
 
+    #[tracing::instrument(skip(self))]
     async fn pop(&self, in_queue: &str, in_runner_id: Uuid) -> Result<JobInfo, Self::Error> {
         loop {
             tracing::trace!("pop: looping");
@@ -370,6 +373,7 @@ impl background_jobs_core::Storage for Storage {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     async fn heartbeat(&self, job_id: Uuid, in_runner_id: Uuid) -> Result<(), Self::Error> {
         let mut conn = self.inner.pool.get().await.map_err(PostgresError::Pool)?;
 
@@ -390,6 +394,7 @@ impl background_jobs_core::Storage for Storage {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     async fn complete(&self, return_job_info: ReturnJobInfo) -> Result<bool, Self::Error> {
         let mut conn = self.inner.pool.get().await.map_err(PostgresError::Pool)?;
 

@@ -67,7 +67,7 @@ pub mod memory_storage {
 
     type OrderedKey = (String, Uuid);
     type JobState = Option<(Uuid, OffsetDateTime)>;
-    type JobMeta = (Uuid, JobState);
+    type JobMeta = (Uuid, time::Duration, JobState);
 
     struct Inner {
         queues: HashMap<String, Event>,
@@ -106,8 +106,8 @@ pub mod memory_storage {
                     Bound::Excluded((pop_queue.clone(), lower_bound)),
                     Bound::Unbounded,
                 ))
-                .filter(|(_, (_, meta))| meta.is_none())
-                .filter_map(|(_, (id, _))| inner.jobs.get(id))
+                .filter(|(_, (_, _, meta))| meta.is_none())
+                .filter_map(|(_, (id, _, _))| inner.jobs.get(id))
                 .take_while(|JobInfo { queue, .. }| queue.as_str() == pop_queue.as_str())
                 .map(|JobInfo { next_queue, .. }| {
                     if *next_queue > now {
@@ -130,12 +130,12 @@ pub mod memory_storage {
 
             let mut pop_job = None;
 
-            for (_, (job_id, job_meta)) in inner.queue_jobs.range_mut((
+            for (_, (job_id, heartbeat_interval, job_meta)) in inner.queue_jobs.range_mut((
                 Bound::Excluded((queue.to_string(), lower_bound)),
                 Bound::Included((queue.to_string(), upper_bound)),
             )) {
                 if job_meta.is_none()
-                    || job_meta.is_some_and(|(_, h)| h + time::Duration::seconds(30) < now)
+                    || job_meta.is_some_and(|(_, h)| h + (5 * *heartbeat_interval) < now)
                 {
                     *job_meta = Some((runner_id, now));
                     pop_job = Some(*job_id);
@@ -162,7 +162,7 @@ pub mod memory_storage {
                 return;
             };
 
-            for (_, (found_job_id, found_job_meta)) in inner.queue_jobs.range_mut((
+            for (_, (found_job_id, _, found_job_meta)) in inner.queue_jobs.range_mut((
                 Bound::Excluded((queue.clone(), lower_bound)),
                 Bound::Included((queue, upper_bound)),
             )) {
@@ -183,7 +183,7 @@ pub mod memory_storage {
 
             let mut key = None;
 
-            for (found_key, (found_job_id, _)) in inner.queue_jobs.range_mut((
+            for (found_key, (found_job_id, _, _)) in inner.queue_jobs.range_mut((
                 Bound::Excluded((job.queue.clone(), lower_bound)),
                 Bound::Included((job.queue.clone(), upper_bound)),
             )) {
@@ -206,14 +206,20 @@ pub mod memory_storage {
             let id = job.id;
             let queue = job.queue.clone();
             let queue_time_id = job.next_queue_id();
+            let heartbeat_interval = job.heartbeat_interval;
 
             let mut inner = self.inner.lock().unwrap();
 
             inner.jobs.insert(id, job);
 
-            inner
-                .queue_jobs
-                .insert((queue.clone(), queue_time_id), (id, None));
+            inner.queue_jobs.insert(
+                (queue.clone(), queue_time_id),
+                (
+                    id,
+                    time::Duration::milliseconds(heartbeat_interval as _),
+                    None,
+                ),
+            );
 
             inner.queues.entry(queue).or_default().notify(1);
 
@@ -225,16 +231,19 @@ pub mod memory_storage {
     impl<T: Timer + Send + Sync + Clone> super::Storage for Storage<T> {
         type Error = Infallible;
 
+        #[tracing::instrument(skip(self))]
         async fn info(&self, job_id: Uuid) -> Result<Option<JobInfo>, Self::Error> {
             Ok(self.get(job_id))
         }
 
         /// push a job into the queue
+        #[tracing::instrument(skip_all)]
         async fn push(&self, job: NewJobInfo) -> Result<Uuid, Self::Error> {
             Ok(self.insert(job.build()))
         }
 
         /// pop a job from the provided queue
+        #[tracing::instrument(skip(self))]
         async fn pop(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, Self::Error> {
             loop {
                 let (listener, duration) = self.listener(queue.to_string());
@@ -255,12 +264,14 @@ pub mod memory_storage {
         }
 
         /// mark a job as being actively worked on
+        #[tracing::instrument(skip(self))]
         async fn heartbeat(&self, job_id: Uuid, runner_id: Uuid) -> Result<(), Self::Error> {
             self.set_heartbeat(job_id, runner_id);
             Ok(())
         }
 
         /// "Return" a job to the database, marking it for retry if needed
+        #[tracing::instrument(skip(self))]
         async fn complete(
             &self,
             ReturnJobInfo { id, result }: ReturnJobInfo,
