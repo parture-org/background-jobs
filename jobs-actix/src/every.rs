@@ -1,7 +1,7 @@
 use crate::QueueHandle;
-use actix_rt::time::{interval_at, Instant};
 use background_jobs_core::Job;
 use std::time::Duration;
+use tokio::time::{interval_at, Instant};
 
 /// A type used to schedule recurring jobs.
 ///

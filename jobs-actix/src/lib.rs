@@ -131,6 +131,7 @@ use tokio::sync::Notify;
 mod actix_job;
 mod every;
 mod server;
+mod spawn;
 mod storage;
 mod worker;
 
@@ -148,9 +149,7 @@ impl Timer for ActixTimer {
     where
         F: std::future::Future + Send + Sync,
     {
-        actix_rt::time::timeout(duration, future)
-            .await
-            .map_err(|_| ())
+        tokio::time::timeout(duration, future).await.map_err(|_| ())
     }
 }
 
@@ -444,12 +443,12 @@ where
                 let extras_2 = extras.clone();
 
                 arbiter.spawn_fn(move || {
-                    actix_rt::spawn(worker::local_worker(
-                        queue,
-                        processors.cached(),
-                        server,
-                        extras_2,
-                    ));
+                    if let Err(e) = spawn::spawn(
+                        "local-worker",
+                        worker::local_worker(queue, processors.cached(), server, extras_2),
+                    ) {
+                        tracing::error!("Failed to spawn worker {e}");
+                    }
                 });
             }
         }
@@ -496,10 +495,10 @@ impl QueueHandle {
     ///
     /// This job will be added to it's queue on the server once every `Duration`. It will be
     /// processed whenever workers are free to do so.
-    pub fn every<J>(&self, duration: Duration, job: J)
+    pub fn every<J>(&self, duration: Duration, job: J) -> std::io::Result<()>
     where
         J: Job + Clone + Send + 'static,
     {
-        actix_rt::spawn(every(self.clone(), duration, job));
+        spawn::spawn("every", every(self.clone(), duration, job)).map(|_| ())
     }
 }

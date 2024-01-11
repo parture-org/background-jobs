@@ -24,14 +24,21 @@ impl<State: Clone + 'static, Extras: 'static> Drop for LocalWorkerStarter<State,
         let extras = self.extras.take().unwrap();
 
         if let Ok(true) = res {
-            actix_rt::spawn(local_worker(
-                self.queue.clone(),
-                self.processors.clone(),
-                self.server.clone(),
-                extras,
-            ));
+            if let Err(e) = crate::spawn::spawn(
+                "local-worker",
+                local_worker(
+                    self.queue.clone(),
+                    self.processors.clone(),
+                    self.server.clone(),
+                    extras,
+                ),
+            ) {
+                tracing::error!("Failed to re-spawn local worker: {e}");
+            } else {
+                metrics::counter!("background-jobs.actix.worker.restart").increment(1);
+            }
         } else {
-            tracing::warn!("Not restarting worker, Arbiter is dead");
+            tracing::info!("Shutting down worker");
             drop(extras);
         }
     }
@@ -57,8 +64,7 @@ async fn heartbeat_job<F: Future>(
     runner_id: Uuid,
     heartbeat_interval: u64,
 ) -> F::Output {
-    let mut interval =
-        actix_rt::time::interval(std::time::Duration::from_millis(heartbeat_interval));
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(heartbeat_interval));
 
     let mut future = std::pin::pin!(future);
 
@@ -86,7 +92,7 @@ async fn heartbeat_job<F: Future>(
 }
 
 async fn time_job<F: Future>(future: F, job_id: Uuid) -> F::Output {
-    let mut interval = actix_rt::time::interval(std::time::Duration::from_secs(5));
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
     interval.tick().await;
     let mut count = 0;
 
@@ -147,7 +153,7 @@ pub(crate) async fn local_worker<State, Extras>(
     let id = Uuid::now_v7();
 
     let log_on_drop = RunOnDrop(|| {
-        make_span(id, &queue, "closing").in_scope(|| tracing::warn!("Worker closing"));
+        make_span(id, &queue, "closing").in_scope(|| tracing::info!("Worker closing"));
     });
 
     loop {

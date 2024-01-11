@@ -23,5 +23,6 @@ tokio = { version = "1", default-features = false, features = [
   "macros",
   "rt",
   "sync",
+  "tracing",
 ] }
 uuid = { version = "1", features = ["v7", "serde"] }
