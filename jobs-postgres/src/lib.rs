@@ -1,5 +1,8 @@
 mod embedded;
+mod future;
 mod schema;
+
+use future::{Metrics as _, Timeout as _};
 
 use std::{
     collections::{BTreeSet, VecDeque},
@@ -227,7 +230,10 @@ impl background_jobs_core::Storage for Storage {
                 .select(PostgresJob::as_select())
                 .filter(id.eq(job_id))
                 .get_result(&mut conn)
+                .metrics("background-jobs.postgres.info")
+                .timeout(Duration::from_secs(5))
                 .await
+                .map_err(|_| PostgresError::DbTimeout)?
                 .optional()
                 .map_err(PostgresError::Diesel)?
         };
@@ -258,7 +264,10 @@ impl background_jobs_core::Storage for Storage {
 
             diesel::sql_query("LISTEN queue_status_channel;")
                 .execute(&mut conn)
+                .metrics("background-jobs.postgres.listen")
+                .timeout(Duration::from_secs(5))
                 .await
+                .map_err(|_| PostgresError::DbTimeout)?
                 .map_err(PostgresError::Diesel)?;
 
             let count = {
@@ -275,6 +284,7 @@ impl background_jobs_core::Storage for Storage {
                         runner_id.eq(Option::<Uuid>::None),
                     ))
                     .execute(&mut conn)
+                    .metrics("background-jobs.postgres.requeue")
                     .await
                     .map_err(PostgresError::Diesel)?
             };
@@ -316,7 +326,10 @@ impl background_jobs_core::Storage for Storage {
                     ))
                     .returning(PostgresJob::as_returning())
                     .get_result(&mut conn)
+                    .metrics("background-jobs.postgres.claim")
+                    .timeout(Duration::from_secs(5))
                     .await
+                    .map_err(|_| PostgresError::DbTimeout)?
                     .optional()
                     .map_err(PostgresError::Diesel)?
             };
@@ -325,33 +338,31 @@ impl background_jobs_core::Storage for Storage {
                 return Ok(postgres_job.into());
             }
 
-            let next_queue = {
+            let sleep_duration = {
                 use schema::job_queue::dsl::*;
 
                 job_queue
                     .filter(queue.eq(in_queue).and(status.eq(JobStatus::New)))
                     .select(diesel::dsl::sql::<Interval>("NOW() - next_queue"))
                     .get_result::<PgInterval>(&mut conn)
+                    .metrics("background-jobs.postgres.next-queue")
+                    .timeout(Duration::from_secs(5))
                     .await
+                    .map_err(|_| PostgresError::DbTimeout)?
                     .optional()
                     .map_err(PostgresError::Diesel)?
+                    .map(|interval| {
+                        if interval.microseconds < 0 {
+                            Duration::from_micros(interval.microseconds.abs_diff(0))
+                        } else {
+                            Duration::from_secs(0)
+                        }
+                    })
+                    .unwrap_or(Duration::from_secs(5))
             };
 
-            let sleep_duration = next_queue
-                .map(|interval| {
-                    if interval.microseconds < 0 {
-                        Duration::from_micros(interval.microseconds.abs_diff(0))
-                    } else {
-                        Duration::from_secs(0)
-                    }
-                })
-                .unwrap_or(Duration::from_secs(5));
-
             drop(conn);
-            if tokio::time::timeout(sleep_duration, notifier.notified())
-                .await
-                .is_ok()
-            {
+            if notifier.notified().timeout(sleep_duration).await.is_ok() {
                 tracing::debug!("Notified");
             } else {
                 tracing::debug!("Timed out");
@@ -369,7 +380,10 @@ impl background_jobs_core::Storage for Storage {
                 .filter(id.eq(job_id))
                 .set((heartbeat.eq(diesel::dsl::now), runner_id.eq(in_runner_id)))
                 .execute(&mut conn)
+                .metrics("background-jobs.postgres.heartbeat")
+                .timeout(Duration::from_secs(5))
                 .await
+                .map_err(|_| PostgresError::DbTimeout)?
                 .map_err(PostgresError::Diesel)?;
         }
 
@@ -386,7 +400,10 @@ impl background_jobs_core::Storage for Storage {
                 .filter(id.eq(return_job_info.id))
                 .returning(PostgresJob::as_returning())
                 .get_result(&mut conn)
+                .metrics("background-jobs.postgres.complete")
+                .timeout(Duration::from_secs(5))
                 .await
+                .map_err(|_| PostgresError::DbTimeout)?
                 .optional()
                 .map_err(PostgresError::Diesel)?
         };
@@ -492,7 +509,10 @@ impl Storage {
             postgres_job
                 .insert_into(job_queue)
                 .execute(&mut conn)
+                .metrics("background-jobs.postgres.insert")
+                .timeout(Duration::from_secs(5))
                 .await
+                .map_err(|_| PostgresError::DbTimeout)?
                 .map_err(PostgresError::Diesel)?;
         }
 
