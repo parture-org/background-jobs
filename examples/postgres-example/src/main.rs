@@ -32,8 +32,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     // Set up our Storage
-    let storage =
-        Storage::connect("postgres://postgres:postgres@localhost:5432/db".parse()?).await?;
+    let storage = Storage::connect(
+        "postgres://postgres:postgres@localhost:5432/db".parse()?,
+        None,
+    )
+    .await?;
 
     let arbiter = Arbiter::new();
 
