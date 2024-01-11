@@ -15,5 +15,6 @@ pub(crate) fn spawn<F>(name: &str, future: F) -> std::io::Result<JoinHandle<F::O
 where
     F: Future + 'static,
 {
+    let _ = name;
     Ok(tokio::task::spawn_local(future))
 }
