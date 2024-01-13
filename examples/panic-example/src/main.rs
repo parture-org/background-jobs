@@ -1,7 +1,6 @@
 use actix_rt::Arbiter;
 use anyhow::Error;
-use background_jobs::{Job, MaxRetries, WorkerConfig};
-use background_jobs_sled_storage::Storage;
+use background_jobs::{actix::WorkerConfig, sled::Storage, Job, MaxRetries};
 use std::{
     future::{ready, Ready},
     time::{Duration, SystemTime},

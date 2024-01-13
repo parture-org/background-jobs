@@ -1,10 +1,9 @@
-use actix_rt::Arbiter;
+use anyhow::Error;
 use background_jobs::{
-    actix::{Spawner, WorkerConfig},
-    postgres::Storage,
-    MaxRetries, UnsendJob as Job,
+    memory_storage::{Storage, TokioTimer},
+    tokio::WorkerConfig,
+    Job, MaxRetries,
 };
-// use background_jobs_sled_storage::Storage;
 use std::{
     future::{ready, Ready},
     time::{Duration, SystemTime},
@@ -21,12 +20,12 @@ pub struct MyState {
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct MyJob {
-    some_u64: u64,
-    other_u64: u64,
+    some_usize: usize,
+    other_usize: usize,
 }
 
-#[actix_rt::main]
-async fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> Result<(), Error> {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::fmt::fmt()
@@ -34,20 +33,14 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     // Set up our Storage
-    let storage = Storage::connect(
-        "postgres://postgres:postgres@localhost:5432/db".parse()?,
-        None,
-    )
-    .await?;
-
-    let arbiter = Arbiter::new();
+    // let db = sled::Config::new().temporary(true).open()?;
+    let storage = Storage::new(TokioTimer);
 
     // Configure and start our workers
-    let queue_handle =
-        WorkerConfig::new_in_arbiter(arbiter.handle(), storage, |_| MyState::new("My App"))
-            .register::<MyJob>()
-            .set_worker_count(DEFAULT_QUEUE, 16)
-            .start();
+    let queue_handle = WorkerConfig::new(storage, |_| MyState::new("My App"))
+        .register::<MyJob>()
+        .set_worker_count(DEFAULT_QUEUE, 16)
+        .start();
 
     // Queue our jobs
     queue_handle.queue(MyJob::new(1, 2)).await?;
@@ -55,18 +48,12 @@ async fn main() -> anyhow::Result<()> {
     queue_handle.queue(MyJob::new(5, 6)).await?;
     for i in 0..20 {
         queue_handle
-            .schedule(
-                MyJob::new(7 + i, 8 + i),
-                SystemTime::now() + Duration::from_secs(i),
-            )
+            .schedule(MyJob::new(7, 8), SystemTime::now() + Duration::from_secs(i))
             .await?;
     }
 
-    // Block on Actix
-    actix_rt::signal::ctrl_c().await?;
-
-    arbiter.stop();
-    let _ = arbiter.join();
+    // Block on Tokio
+    tokio::signal::ctrl_c().await?;
 
     Ok(())
 }
@@ -80,18 +67,17 @@ impl MyState {
 }
 
 impl MyJob {
-    pub fn new(some_u64: u64, other_u64: u64) -> Self {
+    pub fn new(some_usize: usize, other_usize: usize) -> Self {
         MyJob {
-            some_u64,
-            other_u64,
+            some_usize,
+            other_usize,
         }
     }
 }
 
 impl Job for MyJob {
     type State = MyState;
-    type Future = Ready<anyhow::Result<()>>;
-    type Spawner = Spawner;
+    type Future = Ready<Result<(), Error>>;
 
     // The name of the job. It is super important that each job has a unique name,
     // because otherwise one job will overwrite another job when they're being

@@ -1,14 +1,11 @@
 use actix_rt::Arbiter;
 use anyhow::Error;
 use background_jobs::{
+    actix::{Spawner, WorkerConfig},
     metrics::MetricsStorage,
-    ActixSpawner,
-    MaxRetries,
-    // memory_storage::{ActixTimer, Storage},
-    UnsendJob as Job,
-    WorkerConfig,
+    sled::Storage,
+    MaxRetries, UnsendJob as Job,
 };
-use background_jobs_sled_storage::Storage;
 use std::{future::Future, pin::Pin, time::Duration};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -93,7 +90,7 @@ impl MyJob {
 impl Job for MyJob {
     type State = MyState;
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>;
-    type Spawner = ActixSpawner;
+    type Spawner = Spawner;
 
     // The name of the job. It is super important that each job has a unique name,
     // because otherwise one job will overwrite another job when they're being

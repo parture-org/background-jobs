@@ -1,5 +1,5 @@
 [package]
-name = "panic-example"
+name = "tokio-example"
 version = "0.1.0"
 authors = ["asonix <asonix@asonix.dog>"]
 edition = "2021"
@@ -7,10 +7,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix-rt = "2.0.0"
 anyhow = "1.0"
-background-jobs = { version = "0.17.0", path = "../..", features = [ "error-logging", "sled" ] }
-time = "0.3"
+background-jobs = { version = "0.17.0", path = "../..", default-features = false, features = [ "error-logging", "sled", "tokio"] }
+tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 serde = { version = "1.0", features = ["derive"] }
