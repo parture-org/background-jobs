@@ -99,11 +99,11 @@
 //!     // Jobs can optionally override this value
 //!     const BACKOFF: Backoff = Backoff::Exponential(2);
 //!
-//!     // When should the job be considered dead
+//!     // This is important for allowing the job server to reap processes that were started but never
+//!     // completed.
 //!     //
-//!     // The timeout defines when a job is allowed to be considered dead, and so can be retried
-//!     // by the job processor. The value is in milliseconds and defaults to 15,000
-//!     const TIMEOUT: i64 = 15_000;
+//!     // Defaults to 5 seconds
+//!     const HEARTBEAT_INTERVAL: u64 = 5_000;
 //!
 //!     fn run(self, state: MyState) -> Self::Future {
 //!         println!("{}: args, {:?}", state.app_name, self);
@@ -197,7 +197,7 @@ impl Manager {
 
                     notified.await;
 
-                    metrics::counter!("background-jobs.worker-arbiter.restart", "number" => i.to_string()).increment(1);
+                    metrics::counter!("background-jobs.actix.worker-arbiter.restart", "number" => i.to_string()).increment(1);
                     tracing::warn!("Recovering from dead worker arbiter");
 
                     drop(worker_arbiter);
