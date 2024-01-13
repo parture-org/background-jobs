@@ -23,10 +23,16 @@ members = [
   "examples/metrics-example",
   "examples/panic-example",
   "examples/postgres-example",
+  "examples/tokio-example",
 ]
 
 [features]
-default = ["background-jobs-actix", "background-jobs-metrics"]
+default = ["actix-rt", "metrics"]
+actix-rt = ["dep:background-jobs-actix"]
+metrics = ["dep:background-jobs-metrics"]
+postgres = ["dep:background-jobs-postgres"]
+sled = ["dep:background-jobs-sled"]
+tokio = ["dep:background-jobs-tokio"]
 completion-logging = [
   "background-jobs-core/completion-logging",
   "error-logging",
@@ -50,4 +56,14 @@ optional = true
 [dependencies.background-jobs-postgres]
 version = "0.17.0"
 path = "jobs-postgres"
+optional = true
+
+[dependencies.background-jobs-sled]
+version = "0.17.0"
+path = "jobs-sled"
+optional = true
+
+[dependencies.background-jobs-tokio]
+version = "0.17.0"
+path = "jobs-tokio"
 optional = true

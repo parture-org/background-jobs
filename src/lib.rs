@@ -112,7 +112,7 @@
 //! ```
 //!
 //! #### Running jobs
-//! By default, this crate ships with the `background-jobs-actix` feature enabled. This uses the
+//! By default, this crate ships with the `actix-rt` feature enabled. This uses the
 //! `background-jobs-actix` crate to spin up a Server and Workers, and provides a mechanism for
 //! spawning new jobs.
 //!
@@ -163,7 +163,7 @@
 
 pub use background_jobs_core::{Backoff, Job, MaxRetries, UnsendJob, UnsendSpawner};
 
-#[cfg(feature = "background-jobs-metrics")]
+#[cfg(feature = "metrics")]
 pub mod metrics {
     pub use background_jobs_metrics::{
         build, install, JobStat, MetricsStorage, SetRecorderError, Stats, StatsHandle,
@@ -182,14 +182,29 @@ pub mod dev {
 pub mod memory_storage {
     pub use background_jobs_core::memory_storage::{Storage, Timer};
 
-    #[cfg(feature = "background-jobs-actix")]
+    #[cfg(feature = "actix-rt")]
     pub use background_jobs_actix::ActixTimer;
+
+    #[cfg(feature = "tokio")]
+    pub use background_jobs_tokio::TokioTimer;
 }
 
-#[cfg(feature = "background-jobs-actix")]
-pub use background_jobs_actix::{ActixSpawner, Manager, QueueHandle, WorkerConfig};
+#[cfg(feature = "actix-rt")]
+pub mod actix {
+    pub use background_jobs_actix::{ActixSpawner as Spawner, Manager, QueueHandle, WorkerConfig};
+}
 
-#[cfg(feature = "background-jobs-postgres")]
+#[cfg(feature = "postgres")]
 pub mod postgres {
     pub use background_jobs_postgres::Storage;
+}
+
+#[cfg(feature = "sled")]
+pub mod sled {
+    pub use background_jobs_sled::{Error, Storage};
+}
+#[cfg(feature = "tokio")]
+
+pub mod tokio {
+    pub use background_jobs_tokio::{QueueHandle, WorkerConfig};
 }
