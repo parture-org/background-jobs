@@ -125,7 +125,7 @@ impl StatsRecorder {
     ///     .add_recorder(jobs_recorder)
     ///     .build();
     ///
-    /// metrics::set_boxed_recorder(Box::new(recorder)).expect("Failed to set recorder");
+    /// metrics::set_global_recorder(recorder).expect("Failed to set recorder");
     ///
     /// println!("{:?}", handle.get());
     /// ```
