@@ -16,6 +16,7 @@ members = [
   "jobs-metrics",
   "jobs-postgres",
   "jobs-sled",
+  "jobs-tokio",
   "examples/basic-example",
   "examples/long-example",
   "examples/managed-example",
