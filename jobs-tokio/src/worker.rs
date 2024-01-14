@@ -7,52 +7,6 @@ use std::{
 use tracing::{Instrument, Span};
 use uuid::Uuid;
 
-struct LocalWorkerStarter<State: Send + Clone + 'static> {
-    queue: String,
-    processors: ProcessorMap<State>,
-    server: Storage,
-}
-
-#[cfg(tokio_unstable)]
-fn test_runtime() -> anyhow::Result<()> {
-    tokio::task::Builder::new()
-        .name("runtime-test")
-        .spawn(async move {})
-        .map(|_| ())
-        .map_err(From::from)
-}
-
-#[cfg(not(tokio_unstable))]
-fn test_runtime() -> anyhow::Result<()> {
-    std::panic::catch_unwind(|| tokio::spawn(async move {})).map(|_| ()).map_err(From::from)
-}
-
-impl<State> Drop for LocalWorkerStarter<State> where State: Send + Clone + 'static {
-    fn drop(&mut self) {
-        metrics::counter!("background-jobs.tokio.worker.finished", "queue" => self.queue.clone())
-            .increment(1);
-
-        let res = test_runtime();
-
-        if res.is_ok() {
-            if let Err(e) = crate::spawn::spawn(
-                "local-worker",
-                local_worker(
-                    self.queue.clone(),
-                    self.processors.clone(),
-                    self.server.clone(),
-                ),
-            ) {
-                tracing::error!("Failed to re-spawn local worker: {e}");
-            } else {
-                metrics::counter!("background-jobs.tokio.worker.restart").increment(1);
-            }
-        } else {
-            tracing::info!("Shutting down worker");
-        }
-    }
-}
-
 struct RunOnDrop<F>(F)
 where
     F: Fn();
@@ -148,18 +102,13 @@ pub(crate) async fn local_worker<State>(
 ) where
     State: Send + Clone + 'static,
 {
-    metrics::counter!("background-jobs.tokio.worker.started", "queue" => queue.clone()).increment(1);
-
-    let starter = LocalWorkerStarter {
-        queue: queue.clone(),
-        processors: processors.clone(),
-        server: server.clone(),
-    };
+    metrics::counter!("background-jobs.tokio.worker.started", "queue" => queue.clone())
+        .increment(1);
 
     let id = Uuid::now_v7();
 
     let log_on_drop = RunOnDrop(|| {
-        make_span(id, &queue, "closing").in_scope(|| tracing::info!("Worker closing"));
+        make_span(id, &queue, "closing").in_scope(|| tracing::debug!("Worker closing"));
     });
 
     loop {
@@ -219,7 +168,6 @@ pub(crate) async fn local_worker<State>(
     }
 
     drop(log_on_drop);
-    drop(starter);
 }
 
 fn make_span(id: Uuid, queue: &str, operation: &str) -> Span {

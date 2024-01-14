@@ -50,6 +50,8 @@
 //!
 //!     // tokio::signal::ctrl_c().await?;
 //!
+//!     drop(queue_handle);
+//!
 //!     Ok(())
 //! }
 //!
@@ -118,10 +120,11 @@ use background_jobs_core::{
     memory_storage::Timer, new_job, new_scheduled_job, Job, ProcessorMap, Storage as StorageTrait,
 };
 use std::{
-    collections::BTreeMap,
-    sync::Arc,
+    collections::{BTreeMap, HashMap},
+    sync::{Arc, Mutex},
     time::{Duration, SystemTime},
 };
+use tokio::task::{JoinHandle, JoinSet};
 
 mod every;
 mod spawn;
@@ -151,6 +154,7 @@ where
 {
     QueueHandle {
         inner: Storage::new(storage),
+        manager_handle: Some(Arc::new(Mutex::new(None))),
     }
 }
 
@@ -218,23 +222,80 @@ where
     }
 
     /// Start the workers in the provided arbiter
-    pub fn start(self) -> QueueHandle {
-        for (key, count) in self.queues.iter() {
+    pub fn start(self) -> std::io::Result<QueueHandle> {
+        let Self {
+            processors,
+            queues,
+            queue_handle,
+        } = self;
+
+        let mut sets = HashMap::new();
+
+        for (key, count) in queues.iter() {
+            let mut set = JoinSet::new();
+
             for _ in 0..*count {
                 let queue = key.clone();
-                let processors = self.processors.clone();
-                let server = self.queue_handle.inner.clone();
+                let processors = processors.clone();
+                let server = queue_handle.inner.clone();
 
-                if let Err(e) = spawn::spawn(
+                spawn::spawn_in(
+                    &mut set,
                     "local-worker",
                     worker::local_worker(queue, processors.clone(), server),
-                ) {
-                    tracing::error!("Failed to spawn worker {e}");
-                }
+                )?;
             }
+
+            sets.insert(key.clone(), set);
         }
 
-        self.queue_handle
+        let server = queue_handle.inner.clone();
+
+        let manager_task = crate::spawn::spawn("set-supervisor", async move {
+            let mut superset = JoinSet::new();
+
+            for (queue, mut set) in sets {
+                let server = server.clone();
+                let processors = processors.clone();
+
+                if let Err(e) = spawn::spawn_in(&mut superset, "worker-supervisor", async move {
+                    while let Some(_) = set.join_next().await {
+                        metrics::counter!("background-jobs.tokio.worker.finished", "queue" => queue.clone())
+                                .increment(1);
+
+                        tracing::warn!("worker closed, spawning another");
+
+                        if let Err(e) = spawn::spawn_in(
+                            &mut set,
+                            "local-worker",
+                            worker::local_worker(queue.clone(), processors.clone(), server.clone()),
+                        ) {
+                            tracing::warn!("Failed to respawn worker: {e}");
+                            break;
+                        }
+                        metrics::counter!("background-jobs.tokio.worker.restart").increment(1);
+                    }
+                }) {
+                    tracing::warn!("Failed to spawn worker supervisor: {e}");
+                    break;
+                }
+            }
+
+            let mut count = 0;
+            while superset.join_next().await.is_some() {
+                count += 1;
+                tracing::info!("Joined worker-supervisor {count}");
+            }
+        })?;
+
+        *queue_handle
+            .manager_handle
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap() = Some(manager_task);
+
+        Ok(queue_handle)
     }
 }
 
@@ -245,6 +306,7 @@ where
 #[derive(Clone)]
 pub struct QueueHandle {
     inner: Storage,
+    manager_handle: Option<Arc<Mutex<Option<JoinHandle<()>>>>>,
 }
 
 impl QueueHandle {
@@ -283,5 +345,19 @@ impl QueueHandle {
         J: Job + Clone + Send + 'static,
     {
         spawn::spawn("every", every(self.clone(), duration, job)).map(|_| ())
+    }
+}
+
+impl Drop for QueueHandle {
+    fn drop(&mut self) {
+        if let Some(handle) = self
+            .manager_handle
+            .take()
+            .and_then(Arc::into_inner)
+            .and_then(|m| m.lock().unwrap().take())
+        {
+            tracing::debug!("Dropping last QueueHandle");
+            handle.abort();
+        }
     }
 }
