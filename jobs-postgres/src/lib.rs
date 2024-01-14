@@ -87,6 +87,7 @@ fn spawn_detach<F: Future + Send + 'static>(
 where
     F::Output: Send,
 {
+    let _ = name;
     Ok(tokio::spawn(future))
 }
 
