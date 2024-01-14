@@ -1,6 +1,5 @@
-use actix_rt::Arbiter;
 use anyhow::Error;
-use background_jobs::{actix::WorkerConfig, sled::Storage, Job, MaxRetries};
+use background_jobs::{sled::Storage, tokio::WorkerConfig, Job, MaxRetries};
 use std::{
     future::{ready, Ready},
     time::{Duration, SystemTime},
@@ -17,14 +16,14 @@ pub struct MyState {
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct MyJob {
-    some_usize: usize,
-    other_usize: usize,
+    some_u64: u64,
+    other_u64: u64,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct PanickingJob;
 
-#[actix_rt::main]
+#[tokio::main]
 async fn main() -> Result<(), Error> {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
@@ -36,15 +35,12 @@ async fn main() -> Result<(), Error> {
     let db = sled::Config::new().temporary(true).open()?;
     let storage = Storage::new(db)?;
 
-    let arbiter = Arbiter::new();
-
     // Configure and start our workers
-    let queue_handle =
-        WorkerConfig::new_in_arbiter(arbiter.handle(), storage, |_| MyState::new("My App"))
-            .register::<PanickingJob>()
-            .register::<MyJob>()
-            .set_worker_count(DEFAULT_QUEUE, 16)
-            .start();
+    let queue_handle = WorkerConfig::new(storage, |_| MyState::new("My App"))
+        .register::<PanickingJob>()
+        .register::<MyJob>()
+        .set_worker_count(DEFAULT_QUEUE, 16)
+        .start()?;
 
     // Queue some panicking job
     for _ in 0..32 {
@@ -52,18 +48,18 @@ async fn main() -> Result<(), Error> {
     }
 
     // Queue our jobs
-    queue_handle.queue(MyJob::new(1, 2)).await?;
-    queue_handle.queue(MyJob::new(3, 4)).await?;
-    queue_handle.queue(MyJob::new(5, 6)).await?;
-    queue_handle
-        .schedule(MyJob::new(7, 8), SystemTime::now() + Duration::from_secs(2))
-        .await?;
+    for i in 0..10 {
+        queue_handle.queue(MyJob::new(i, i + 1)).await?;
+        queue_handle
+            .schedule(
+                MyJob::new(i + 10, i + 11),
+                SystemTime::now() + Duration::from_secs(i),
+            )
+            .await?;
+    }
 
-    // Block on Actix
-    actix_rt::signal::ctrl_c().await?;
-
-    arbiter.stop();
-    let _ = arbiter.join();
+    // Block on tokio
+    tokio::signal::ctrl_c().await?;
 
     Ok(())
 }
@@ -77,10 +73,10 @@ impl MyState {
 }
 
 impl MyJob {
-    pub fn new(some_usize: usize, other_usize: usize) -> Self {
+    pub fn new(some_u64: u64, other_u64: u64) -> Self {
         MyJob {
-            some_usize,
-            other_usize,
+            some_u64,
+            other_u64,
         }
     }
 }
