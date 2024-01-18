@@ -6,7 +6,7 @@ license = "AGPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/asonix/background-jobs"
 readme = "README.md"
-keywords = ["jobs", "processor", "actix", "tokio", "postgres", "sled"]
+keywords = ["jobs", "actix", "tokio", "postgres", "sled"]
 edition = "2021"
 
 [package.metadata.docs.rs]
