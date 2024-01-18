@@ -41,7 +41,7 @@
 //!     let queue_handle = WorkerConfig::new(storage, move |_| MyState::new("My App"))
 //!         .register::<MyJob>()
 //!         .set_worker_count(DEFAULT_QUEUE, 16)
-//!         .start();
+//!         .start()?;
 //!
 //!     // Queue our jobs
 //!     queue_handle.queue(MyJob::new(1, 2)).await?;
