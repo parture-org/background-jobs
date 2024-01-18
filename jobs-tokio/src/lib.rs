@@ -259,7 +259,7 @@ where
                 let processors = processors.clone();
 
                 if let Err(e) = spawn::spawn_in(&mut superset, "worker-supervisor", async move {
-                    while let Some(_) = set.join_next().await {
+                    while set.join_next().await.is_some() {
                         metrics::counter!("background-jobs.tokio.worker.finished", "queue" => queue.clone())
                                 .increment(1);
 
