@@ -160,6 +160,18 @@
 //! If you want to create your own jobs processor based on this idea, you can depend on the
 //! `background-jobs-core` crate, which provides the Job trait, as well as some
 //! other useful types for implementing a jobs processor and job store.
+//!
+//! ### Available Features
+//!
+//! | feature              | description                                                                                         |
+//! | -------------------- | --------------------------------------------------------------------------------------------------- |
+//! | `actix-rt`           | Enables the actix-based job runner and the ActixTimer for the in-memory job storage implementation  |
+//! | `metrics`            | Enables the metrics subscriber to extract metrics from the MetricsStorage adapter                   |
+//! | `postgres`           | Enables the postgres job storage adapter                                                            |
+//! | `sled`               | Enables the sled job storage adapter                                                                |
+//! | `tokio`              | Enables the tokio-based job runner and the TokioTimer for the in-memory job storage impelementation |
+//! | `completion-logging` | Enables a tracing event that occurs whenever a job completes                                        |
+//! | `error-logging`      | Enables a tracing event that occurs whenever a job fails                                            |
 
 pub use background_jobs_core::{Backoff, Job, MaxRetries, UnsendJob, UnsendSpawner};
 
