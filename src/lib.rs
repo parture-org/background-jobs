@@ -203,8 +203,8 @@ pub mod postgres {
 pub mod sled {
     pub use background_jobs_sled::{Error, Storage};
 }
-#[cfg(feature = "tokio")]
 
+#[cfg(feature = "tokio")]
 pub mod tokio {
     pub use background_jobs_tokio::{QueueHandle, WorkerConfig};
 }

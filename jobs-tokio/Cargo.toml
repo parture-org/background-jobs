@@ -1,6 +1,12 @@
 [package]
 name = "background-jobs-tokio"
+description = "in-process jobs processor based on Tokio"
 version = "0.17.0"
+license = "AGPL-3.0"
+authors = ["asonix <asonix@asonix.dog>"]
+repository = "https://git.asonix.dog/asonix/background-jobs"
+keywords = ["jobs", "processor", "tokio"]
+readme = "../README.md"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

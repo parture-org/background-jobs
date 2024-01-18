@@ -1,13 +1,16 @@
 [package]
 name = "background-jobs"
-description = "Background Jobs implemented with actix and futures"
+description = "asynchronous background jobs implemented with pluggable backends and runtimes"
 version = "0.17.0"
 license = "AGPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/asonix/background-jobs"
 readme = "README.md"
-keywords = ["jobs", "processor", "actix"]
+keywords = ["jobs", "processor", "actix", "tokio", "postgres", "sled"]
 edition = "2021"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [workspace]
 members = [

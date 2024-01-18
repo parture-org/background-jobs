@@ -9,6 +9,9 @@ keywords = ["jobs", "processor"]
 readme = "../README.md"
 edition = "2021"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 default = ["error-logging"]
 completion-logging = []
