@@ -28,7 +28,7 @@ pub use unsend_job::{JoinError, UnsendJob, UnsendSpawner};
 /// The error type returned by the `process` method
 pub enum JobError {
     /// Some error occurred while processing the job
-    #[error("Error performing job: {0}")]
+    #[error("Error performing job")]
     Processing(#[from] Error),
 
     /// Creating a `Job` type from the provided `serde_json::Value` failed

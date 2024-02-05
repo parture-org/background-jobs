@@ -21,6 +21,7 @@ members = [
   "jobs-sled",
   "jobs-tokio",
   "examples/basic-example",
+  "examples/error-example",
   "examples/long-example",
   "examples/managed-example",
   "examples/metrics-example",
