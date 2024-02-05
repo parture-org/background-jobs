@@ -15,7 +15,6 @@ might not be the best experience.
 [dependencies]
 actix-rt = "2.2.0"
 background-jobs = "0.15.0"
-anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 ```
 
@@ -24,8 +23,7 @@ Jobs are a combination of the data required to perform an operation, and the log
 operation. They implement the `Job`, `serde::Serialize`, and `serde::DeserializeOwned`.
 
 ```rust
-use background_jobs::Job;
-use anyhow::Error;
+use background_jobs::{Job, BoxError};
 use std::future::{ready, Ready};
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -45,7 +43,8 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = ();
-    type Future = Ready<Result<(), Error>>;
+    type Error = BoxError;
+    type Future = Ready<Result<(), BoxError>>;
 
     const NAME: &'static str = "MyJob";
 
@@ -80,7 +79,8 @@ impl MyState {
 
 impl Job for MyJob {
     type State = MyState;
-    type Future = Ready<Result<(), Error>>;
+    type Error = BoxError;
+    type Future = Ready<Result<(), BoxError>>;
 
     // The name of the job. It is super important that each job has a unique name,
     // because otherwise one job will overwrite another job when they're being
@@ -126,11 +126,10 @@ With that out of the way, back to the examples:
 
 ##### Main
 ```rust
-use background_jobs::{create_server, WorkerConfig};
-use anyhow::Error;
+use background_jobs::{create_server, actix::WorkerConfig, BoxError};
 
 #[actix_rt::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), BoxError> {
     // Set up our Storage
     // For this example, we use the default in-memory storage mechanism
     use background_jobs::memory_storage::{ActixTimer, Storage};

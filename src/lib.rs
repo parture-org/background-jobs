@@ -29,7 +29,6 @@
 //! ```toml
 //! [dependencies]
 //! actix-rt = "2.6.0"
-//! anyhow = "1.0"
 //! background-jobs = "0.15.0"
 //! serde = { version = "1.0", features = ["derive"] }
 //! ```
@@ -39,8 +38,7 @@
 //! operation. They implment the `Job`, `serde::Serialize`, and `serde::DeserializeOwned`.
 //!
 //! ```rust,ignore
-//! use anyhow::Error;
-//! use background_jobs::Job;
+//! use background_jobs::[Job, BoxError};
 //! use std::future::{ready, Ready};
 //!
 //! #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -60,7 +58,8 @@
 //!
 //! impl Job for MyJob {
 //!     type State = ();
-//!     type Future = Ready<Result<(), Error>>;
+//!     type Error = BoxError;
+//!     type Future = Ready<Result<(), BoxError>>;
 //!
 //!     const NAME: &'static str = "MyJob";
 //!
@@ -80,8 +79,7 @@
 //! Let's re-define the job to care about some application state.
 //!
 //! ```rust,ignore
-//! use anyhow::Error;
-//! use background_jobs::Job;
+//! use background_jobs::[Job, BoxError};
 //! use std::future::{ready, Ready};
 //!
 //! #[derive(Clone, Debug)]
@@ -99,7 +97,8 @@
 //!
 //! impl Job for MyJob {
 //!     type State = MyState;
-//!     type Future = Ready<Result<(), Error>>;
+//!     type Error = BoxError;
+//!     type Future = Ready<Result<(), BoxError>>;
 //!
 //!     const NAME: &'static str = "MyJob";
 //!
@@ -123,11 +122,10 @@
 //!
 //! ##### Main
 //! ```rust,ignore
-//! use anyhow::Error;
-//! use background_jobs::{ServerConfig, memory_storage::Storage, WorkerConfig};
+//! use background_jobs::{ServerConfig, memory_storage::Storage, actix::WorkerConfig, BoxError};
 //!
 //! #[actix_rt::main]
-//! async fn main() -> Result<(), Error> {
+//! async fn main() -> Result<(), BoxError> {
 //!     // Set up our Storage
 //!     let storage = Storage::new();
 //!
@@ -173,7 +171,7 @@
 //! | `completion-logging` | Enables a tracing event that occurs whenever a job completes                                        |
 //! | `error-logging`      | Enables a tracing event that occurs whenever a job fails                                            |
 
-pub use background_jobs_core::{Backoff, Job, MaxRetries, UnsendJob, UnsendSpawner};
+pub use background_jobs_core::{Backoff, BoxError, Job, MaxRetries, UnsendJob, UnsendSpawner};
 
 #[cfg(feature = "metrics")]
 pub mod metrics {

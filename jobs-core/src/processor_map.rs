@@ -188,10 +188,11 @@ where
             ReturnJobInfo::pass(id)
         }
         Ok(Err(e)) => {
-            let display = format!("{}", e);
-            let debug = format!("{:?}", e);
+            let display = format!("{e}");
             span.record("exception.message", &tracing::field::display(&display));
+            let debug = format!("{e:?}");
             span.record("exception.details", &tracing::field::display(&debug));
+
             #[cfg(feature = "error-logging")]
             tracing::warn!("Job {queue}: {name}-{id} errored");
             ReturnJobInfo::fail(id)

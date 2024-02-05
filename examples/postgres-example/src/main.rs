@@ -2,7 +2,7 @@ use actix_rt::Arbiter;
 use background_jobs::{
     actix::{Spawner, WorkerConfig},
     postgres::Storage,
-    MaxRetries, UnsendJob as Job,
+    BoxError, MaxRetries, UnsendJob as Job,
 };
 // use background_jobs_sled_storage::Storage;
 use std::{
@@ -26,7 +26,7 @@ pub struct MyJob {
 }
 
 #[actix_rt::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), BoxError> {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::fmt::fmt()
@@ -90,8 +90,8 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
-    type Error = anyhow::Error;
-    type Future = Ready<anyhow::Result<()>>;
+    type Error = BoxError;
+    type Future = Ready<Result<(), BoxError>>;
     type Spawner = Spawner;
 
     // The name of the job. It is super important that each job has a unique name,

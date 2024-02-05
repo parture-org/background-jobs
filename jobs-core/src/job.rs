@@ -1,5 +1,4 @@
-use crate::{Backoff, JobError, MaxRetries, NewJobInfo};
-use anyhow::Error;
+use crate::{Backoff, BoxError, JobError, MaxRetries, NewJobInfo};
 use serde::{de::DeserializeOwned, ser::Serialize};
 use serde_json::Value;
 use std::{future::Future, pin::Pin, time::SystemTime};
@@ -15,8 +14,7 @@ use tracing::{Instrument, Span};
 /// ### Example
 ///
 /// ```rust
-/// use anyhow::Error;
-/// use background_jobs_core::{Job, new_job};
+/// use background_jobs_core::{Job, new_job, BoxError};
 /// use tracing::info;
 /// use std::future::{ready, Ready};
 ///
@@ -27,7 +25,8 @@ use tracing::{Instrument, Span};
 ///
 /// impl Job for MyJob {
 ///     type State = ();
-///     type Future = Ready<Result<(), Error>>;
+///     type Error = BoxError;
+///     type Future = Ready<Result<(), BoxError>>;
 ///
 ///     const NAME: &'static str = "MyJob";
 ///
@@ -38,7 +37,7 @@ use tracing::{Instrument, Span};
 ///     }
 /// }
 ///
-/// fn main() -> Result<(), Error> {
+/// fn main() -> Result<(), BoxError> {
 ///     let job = new_job(MyJob { count: 1234 })?;
 ///
 ///     Ok(())
@@ -49,7 +48,7 @@ pub trait Job: Serialize + DeserializeOwned + 'static {
     type State: Clone + 'static;
 
     /// The error type this job returns
-    type Error: Into<Box<dyn std::error::Error>>;
+    type Error: Into<BoxError>;
 
     /// The future returned by this job
     type Future: Future<Output = Result<(), Self::Error>> + Send;
@@ -130,7 +129,7 @@ pub trait Job: Serialize + DeserializeOwned + 'static {
 }
 
 /// A provided method to create a new JobInfo from provided arguments
-pub fn new_job<J>(job: J) -> Result<NewJobInfo, Error>
+pub fn new_job<J>(job: J) -> Result<NewJobInfo, BoxError>
 where
     J: Job,
 {
@@ -147,7 +146,7 @@ where
 }
 
 /// Create a NewJobInfo to schedule a job to be performed after a certain time
-pub fn new_scheduled_job<J>(job: J, after: SystemTime) -> Result<NewJobInfo, Error>
+pub fn new_scheduled_job<J>(job: J, after: SystemTime) -> Result<NewJobInfo, BoxError>
 where
     J: Job,
 {
@@ -178,13 +177,13 @@ where
     Box::pin(async move {
         let (fut, span) = res?;
 
-        if let Some(span) = span {
-            fut.instrument(span).await.map_err(Into::into)?;
+        let res = if let Some(span) = span {
+            fut.instrument(span).await
         } else {
-            fut.await.map_err(Into::into)?;
-        }
+            fut.await
+        };
 
-        Ok(())
+        res.map_err(Into::into).map_err(JobError::Processing)
     })
 }
 

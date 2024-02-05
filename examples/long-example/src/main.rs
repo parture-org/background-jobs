@@ -1,9 +1,8 @@
 use actix_rt::Arbiter;
-use anyhow::Error;
 use background_jobs::{
     actix::{Spawner, WorkerConfig},
     sled::Storage,
-    MaxRetries, UnsendJob as Job,
+    BoxError, MaxRetries, UnsendJob as Job,
 };
 use std::{
     future::{ready, Future, Ready},
@@ -30,7 +29,7 @@ pub struct MyJob {
 pub struct LongJob;
 
 #[actix_rt::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), BoxError> {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::fmt::fmt()
@@ -90,8 +89,8 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
-    type Error = Error;
-    type Future = Ready<Result<(), Error>>;
+    type Error = BoxError;
+    type Future = Ready<Result<(), BoxError>>;
     type Spawner = Spawner;
 
     // The name of the job. It is super important that each job has a unique name,
@@ -121,8 +120,8 @@ impl Job for MyJob {
 
 impl Job for LongJob {
     type State = MyState;
-    type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
+    type Error = BoxError;
+    type Future = Pin<Box<dyn Future<Output = Result<(), BoxError>>>>;
     type Spawner = Spawner;
 
     const NAME: &'static str = "LongJob";

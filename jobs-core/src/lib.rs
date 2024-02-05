@@ -6,6 +6,7 @@
 //! This crate shouldn't be depended on directly, except in the case of implementing a custom jobs
 //! processor. For a default solution based on Actix and Sled, look at the `background-jobs` crate.
 
+mod box_error;
 mod catch_unwind;
 mod job;
 mod job_info;
@@ -14,6 +15,7 @@ mod storage;
 mod unsend_job;
 
 pub use crate::{
+    box_error::BoxError,
     job::{new_job, new_scheduled_job, process, Job},
     job_info::{JobInfo, NewJobInfo, ReturnJobInfo},
     processor_map::{CachedProcessorMap, ProcessorMap},
@@ -27,7 +29,7 @@ pub use unsend_job::{JoinError, UnsendJob, UnsendSpawner};
 pub enum JobError {
     /// Some error occurred while processing the job
     #[error("{0}")]
-    Processing(#[from] Box<dyn std::error::Error>),
+    Processing(#[from] BoxError),
 
     /// Creating a `Job` type from the provided `serde_json::Value` failed
     #[error("Could not make JSON value from arguments")]

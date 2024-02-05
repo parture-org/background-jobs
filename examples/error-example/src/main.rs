@@ -1,6 +1,5 @@
 use actix_rt::Arbiter;
-use anyhow::Error;
-use background_jobs::{actix::WorkerConfig, sled::Storage, Job, MaxRetries};
+use background_jobs::{actix::WorkerConfig, sled::Storage, BoxError, Job, MaxRetries};
 use std::{
     future::{ready, Ready},
     time::{Duration, SystemTime},
@@ -25,7 +24,7 @@ pub struct MyJob {
 pub struct ErroringJob;
 
 #[actix_rt::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), BoxError> {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::fmt::fmt()
@@ -87,8 +86,8 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
-    type Error = Error;
-    type Future = Ready<Result<(), Error>>;
+    type Error = BoxError;
+    type Future = Ready<Result<(), BoxError>>;
 
     // The name of the job. It is super important that each job has a unique name,
     // because otherwise one job will overwrite another job when they're being
@@ -115,10 +114,19 @@ impl Job for MyJob {
     }
 }
 
+#[derive(Debug)]
+pub struct Boom;
+impl std::fmt::Display for Boom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "boom")
+    }
+}
+impl std::error::Error for Boom {}
+
 impl Job for ErroringJob {
     type State = MyState;
-    type Error = Error;
-    type Future = Ready<Result<(), Error>>;
+    type Error = Boom;
+    type Future = Ready<Result<(), Boom>>;
 
     const NAME: &'static str = "ErroringJob";
 
@@ -127,6 +135,6 @@ impl Job for ErroringJob {
     const MAX_RETRIES: MaxRetries = MaxRetries::Count(0);
 
     fn run(self, _: MyState) -> Self::Future {
-        ready(Err(anyhow::anyhow!("boom")))
+        ready(Err(Boom))
     }
 }

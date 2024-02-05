@@ -1,17 +1,17 @@
 use std::{ops::Deref, sync::Arc};
 
-use background_jobs_core::{JobInfo, NewJobInfo, ReturnJobInfo, Storage as StorageTrait};
+use background_jobs_core::{BoxError, JobInfo, NewJobInfo, ReturnJobInfo, Storage as StorageTrait};
 use uuid::Uuid;
 
 #[async_trait::async_trait]
 pub trait TokioStorage: Send + Sync {
-    async fn push(&self, job: NewJobInfo) -> anyhow::Result<Uuid>;
+    async fn push(&self, job: NewJobInfo) -> Result<Uuid, BoxError>;
 
-    async fn pop(&self, queue: &str, runner_id: Uuid) -> anyhow::Result<JobInfo>;
+    async fn pop(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, BoxError>;
 
-    async fn heartbeat(&self, job_id: Uuid, worker_id: Uuid) -> anyhow::Result<()>;
+    async fn heartbeat(&self, job_id: Uuid, worker_id: Uuid) -> Result<(), BoxError>;
 
-    async fn complete(&self, return_job_info: ReturnJobInfo) -> anyhow::Result<()>;
+    async fn complete(&self, return_job_info: ReturnJobInfo) -> Result<(), BoxError>;
 }
 
 #[derive(Clone)]
@@ -26,19 +26,22 @@ impl<S> TokioStorage for StorageWrapper<S>
 where
     S: StorageTrait + Send + Sync + 'static,
 {
-    async fn push(&self, job: NewJobInfo) -> anyhow::Result<Uuid> {
+    async fn push(&self, job: NewJobInfo) -> Result<Uuid, BoxError> {
         self.0.push(job).await.map_err(From::from)
     }
 
-    async fn pop(&self, queue: &str, runner_id: Uuid) -> anyhow::Result<JobInfo> {
+    async fn pop(&self, queue: &str, runner_id: Uuid) -> Result<JobInfo, BoxError> {
         self.0.pop(queue, runner_id).await.map_err(From::from)
     }
 
-    async fn heartbeat(&self, job_id: Uuid, runner_id: Uuid) -> anyhow::Result<()> {
-        self.0.heartbeat(job_id, runner_id).await.map_err(From::from)
+    async fn heartbeat(&self, job_id: Uuid, runner_id: Uuid) -> Result<(), BoxError> {
+        self.0
+            .heartbeat(job_id, runner_id)
+            .await
+            .map_err(From::from)
     }
 
-    async fn complete(&self, return_job_info: ReturnJobInfo) -> anyhow::Result<()> {
+    async fn complete(&self, return_job_info: ReturnJobInfo) -> Result<(), BoxError> {
         self.0
             .complete(return_job_info)
             .await

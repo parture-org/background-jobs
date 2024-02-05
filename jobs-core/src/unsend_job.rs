@@ -1,4 +1,4 @@
-use crate::{Backoff, Job, MaxRetries};
+use crate::{Backoff, BoxError, Job, MaxRetries};
 use serde::{de::DeserializeOwned, ser::Serialize};
 use std::{
     fmt::Debug,
@@ -45,7 +45,7 @@ pub trait UnsendJob: Serialize + DeserializeOwned + 'static {
     type State: Clone + 'static;
 
     /// The error type this job returns
-    type Error: Into<Box<dyn std::error::Error>> + Send;
+    type Error: Into<BoxError>;
 
     /// The future returned by this job
     ///
@@ -150,7 +150,7 @@ where
     T: UnsendJob,
 {
     type State = T::State;
-    type Error = T::Error;
+    type Error = BoxError;
     type Future = UnwrapFuture<<T::Spawner as UnsendSpawner>::Handle<Result<(), Self::Error>>>;
 
     const NAME: &'static str = <Self as UnsendJob>::NAME;
@@ -161,7 +161,8 @@ where
 
     fn run(self, state: Self::State) -> Self::Future {
         UnwrapFuture(T::Spawner::spawn(
-            UnsendJob::run(self, state).instrument(Span::current()),
+            async move { UnsendJob::run(self, state).await.map_err(Into::into) }
+                .instrument(Span::current()),
         ))
     }
 

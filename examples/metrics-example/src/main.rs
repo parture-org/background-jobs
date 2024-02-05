@@ -1,10 +1,9 @@
 use actix_rt::Arbiter;
-use anyhow::Error;
 use background_jobs::{
     actix::{Spawner, WorkerConfig},
     metrics::MetricsStorage,
     sled::Storage,
-    MaxRetries, UnsendJob as Job,
+    BoxError, MaxRetries, UnsendJob as Job,
 };
 use std::{future::Future, pin::Pin, time::Duration};
 use tracing::info;
@@ -24,7 +23,7 @@ pub struct MyJob {
 }
 
 #[actix_rt::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), BoxError> {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
 
     // Install the metrics subscriber
@@ -89,8 +88,8 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
-    type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>;
+    type Error = BoxError;
+    type Future = Pin<Box<dyn Future<Output = Result<(), BoxError>> + 'static>>;
     type Spawner = Spawner;
 
     // The name of the job. It is super important that each job has a unique name,

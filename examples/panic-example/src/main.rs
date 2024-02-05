@@ -1,5 +1,4 @@
-use anyhow::Error;
-use background_jobs::{sled::Storage, tokio::WorkerConfig, Job, MaxRetries};
+use background_jobs::{sled::Storage, tokio::WorkerConfig, BoxError, Job, MaxRetries};
 use std::{
     future::{ready, Ready},
     time::{Duration, SystemTime},
@@ -24,7 +23,7 @@ pub struct MyJob {
 pub struct PanickingJob;
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), BoxError> {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::fmt::fmt()
@@ -83,8 +82,8 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
-    type Error = Error;
-    type Future = Ready<Result<(), Error>>;
+    type Error = BoxError;
+    type Future = Ready<Result<(), BoxError>>;
 
     // The name of the job. It is super important that each job has a unique name,
     // because otherwise one job will overwrite another job when they're being
@@ -113,8 +112,8 @@ impl Job for MyJob {
 
 impl Job for PanickingJob {
     type State = MyState;
-    type Error = Error;
-    type Future = Ready<Result<(), Error>>;
+    type Error = BoxError;
+    type Future = Ready<Result<(), BoxError>>;
 
     const NAME: &'static str = "PanickingJob";
 

@@ -12,8 +12,7 @@
 //!
 //! ### Example
 //! ```rust
-//! use anyhow::Error;
-//! use background_jobs_core::{Backoff, Job, MaxRetries};
+//! use background_jobs_core::{Backoff, Job, MaxRetries, BoxError};
 //! use background_jobs_tokio::{TokioTimer, WorkerConfig};
 //! use std::future::{ready, Ready};
 //!
@@ -31,7 +30,7 @@
 //! }
 //!
 //! #[tokio::main]
-//! async fn main() -> Result<(), Error> {
+//! async fn main() -> Result<(), BoxError> {
 //!     // Set up our Storage
 //!     // For this example, we use the default in-memory storage mechanism
 //!     use background_jobs_core::memory_storage::Storage;
@@ -74,7 +73,7 @@
 //!
 //! impl Job for MyJob {
 //!     type State = MyState;
-//!     type Future = Ready<Result<(), Error>>;
+//!     type Future = Ready<Result<(), BoxError>>;
 //!
 //!     // The name of the job. It is super important that each job has a unique name,
 //!     // because otherwise one job will overwrite another job when they're being
@@ -115,9 +114,9 @@
 //! }
 //! ```
 
-use anyhow::Error;
 use background_jobs_core::{
-    memory_storage::Timer, new_job, new_scheduled_job, Job, ProcessorMap, Storage as StorageTrait,
+    memory_storage::Timer, new_job, new_scheduled_job, BoxError, Job, ProcessorMap,
+    Storage as StorageTrait,
 };
 use std::{
     collections::{BTreeMap, HashMap},
@@ -314,7 +313,7 @@ impl QueueHandle {
     ///
     /// This job will be sent to the server for storage, and will execute whenever a worker for the
     /// job's queue is free to do so.
-    pub async fn queue<J>(&self, job: J) -> Result<(), Error>
+    pub async fn queue<J>(&self, job: J) -> Result<(), BoxError>
     where
         J: Job,
     {
@@ -327,7 +326,7 @@ impl QueueHandle {
     ///
     /// This job will be sent to the server for storage, and will execute after the specified time
     /// and when a worker for the job's queue is free to do so.
-    pub async fn schedule<J>(&self, job: J, after: SystemTime) -> Result<(), Error>
+    pub async fn schedule<J>(&self, job: J, after: SystemTime) -> Result<(), BoxError>
     where
         J: Job,
     {

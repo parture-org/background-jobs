@@ -18,7 +18,6 @@ completion-logging = []
 error-logging = []
 
 [dependencies]
-anyhow = "1.0"
 async-trait = "0.1.24"
 event-listener = "4"
 metrics = "0.22.0"
