@@ -1,7 +1,7 @@
 [package]
 name = "background-jobs-postgres"
 description = "Postgres storage backend for background-jobs"
-version = "0.17.0"
+version = "0.18.0"
 license = "AGPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/asonix/background-jobs"
@@ -14,7 +14,7 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1.24"
-background-jobs-core = { version = "0.17.0-beta.1", path = "../jobs-core" }
+background-jobs-core = { version = "0.18.0", path = "../jobs-core" }
 barrel = { version = "0.7.0", features = ["pg"] }
 dashmap = "5.5.3"
 deadpool = { version = "0.9", features = ["rt_tokio_1"] }

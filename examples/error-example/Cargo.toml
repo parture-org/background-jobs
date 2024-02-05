@@ -8,7 +8,7 @@ edition = "2021"
 
 [dependencies]
 actix-rt = "2.0.0"
-background-jobs = { version = "0.17.0", path = "../..", features = [
+background-jobs = { version = "0.18.0", path = "../..", features = [
   "error-logging",
   "sled",
 ] }

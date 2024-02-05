@@ -1,7 +1,7 @@
 [package]
 name = "background-jobs"
 description = "asynchronous background jobs implemented with pluggable backends and runtimes"
-version = "0.17.0"
+version = "0.18.0"
 license = "AGPL-3.0"
 authors = ["asonix <asonix@asonix.dog>"]
 repository = "https://git.asonix.dog/asonix/background-jobs"
@@ -44,30 +44,30 @@ completion-logging = [
 error-logging = ["background-jobs-core/error-logging"]
 
 [dependencies.background-jobs-core]
-version = "0.17.0"
+version = "0.18.0"
 path = "jobs-core"
 
 [dependencies.background-jobs-actix]
-version = "0.17.0"
+version = "0.18.0"
 path = "jobs-actix"
 optional = true
 
 [dependencies.background-jobs-metrics]
-version = "0.17.0"
+version = "0.18.0"
 path = "jobs-metrics"
 optional = true
 
 [dependencies.background-jobs-postgres]
-version = "0.17.0"
+version = "0.18.0"
 path = "jobs-postgres"
 optional = true
 
 [dependencies.background-jobs-sled]
-version = "0.17.0"
+version = "0.18.0"
 path = "jobs-sled"
 optional = true
 
 [dependencies.background-jobs-tokio]
-version = "0.17.0"
+version = "0.18.0"
 path = "jobs-tokio"
 optional = true
