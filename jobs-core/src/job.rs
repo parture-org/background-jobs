@@ -48,8 +48,11 @@ pub trait Job: Serialize + DeserializeOwned + 'static {
     /// The application state provided to this job at runtime.
     type State: Clone + 'static;
 
+    /// The error type this job returns
+    type Error: Into<Box<dyn std::error::Error>>;
+
     /// The future returned by this job
-    type Future: Future<Output = Result<(), Error>> + Send;
+    type Future: Future<Output = Result<(), Self::Error>> + Send;
 
     /// The name of the job
     ///
@@ -176,9 +179,9 @@ where
         let (fut, span) = res?;
 
         if let Some(span) = span {
-            fut.instrument(span).await?;
+            fut.instrument(span).await.map_err(Into::into)?;
         } else {
-            fut.await?;
+            fut.await.map_err(Into::into)?;
         }
 
         Ok(())

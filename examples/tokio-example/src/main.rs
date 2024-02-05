@@ -79,6 +79,7 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
+    type Error = Error;
     type Future = Ready<Result<(), Error>>;
 
     // The name of the job. It is super important that each job has a unique name,

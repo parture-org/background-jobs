@@ -90,6 +90,7 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
+    type Error = anyhow::Error;
     type Future = Ready<anyhow::Result<()>>;
     type Spawner = Spawner;
 

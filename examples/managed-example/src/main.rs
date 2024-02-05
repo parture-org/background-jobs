@@ -102,6 +102,7 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
+    type Error = Error;
     type Future = Ready<Result<(), Error>>;
     type Spawner = Spawner;
 
@@ -132,6 +133,7 @@ impl Job for MyJob {
 
 impl Job for StopJob {
     type State = MyState;
+    type Error = Error;
     type Future = Ready<Result<(), Error>>;
     type Spawner = Spawner;
 

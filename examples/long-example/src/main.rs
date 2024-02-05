@@ -90,6 +90,7 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
+    type Error = Error;
     type Future = Ready<Result<(), Error>>;
     type Spawner = Spawner;
 
@@ -120,6 +121,7 @@ impl Job for MyJob {
 
 impl Job for LongJob {
     type State = MyState;
+    type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
     type Spawner = Spawner;
 

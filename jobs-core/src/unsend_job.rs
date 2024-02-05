@@ -1,5 +1,4 @@
 use crate::{Backoff, Job, MaxRetries};
-use anyhow::Error;
 use serde::{de::DeserializeOwned, ser::Serialize};
 use std::{
     fmt::Debug,
@@ -45,10 +44,13 @@ pub trait UnsendJob: Serialize + DeserializeOwned + 'static {
     /// The application state provided to this job at runtime.
     type State: Clone + 'static;
 
+    /// The error type this job returns
+    type Error: Into<Box<dyn std::error::Error>> + Send;
+
     /// The future returned by this job
     ///
     /// Importantly, this Future does not require Send
-    type Future: Future<Output = Result<(), Error>>;
+    type Future: Future<Output = Result<(), Self::Error>>;
 
     /// The spawner type that will be used to spawn the unsend future
     type Spawner: UnsendSpawner;
@@ -148,7 +150,8 @@ where
     T: UnsendJob,
 {
     type State = T::State;
-    type Future = UnwrapFuture<<T::Spawner as UnsendSpawner>::Handle<Result<(), Error>>>;
+    type Error = T::Error;
+    type Future = UnwrapFuture<<T::Spawner as UnsendSpawner>::Handle<Result<(), Self::Error>>>;
 
     const NAME: &'static str = <Self as UnsendJob>::NAME;
     const QUEUE: &'static str = <Self as UnsendJob>::QUEUE;

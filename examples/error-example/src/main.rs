@@ -1,7 +1,6 @@
 use actix_rt::Arbiter;
 use anyhow::Error;
-use background_jobs::{Job, MaxRetries, WorkerConfig};
-use background_jobs_sled_storage::Storage;
+use background_jobs::{actix::WorkerConfig, sled::Storage, Job, MaxRetries};
 use std::{
     future::{ready, Ready},
     time::{Duration, SystemTime},
@@ -88,6 +87,7 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
+    type Error = Error;
     type Future = Ready<Result<(), Error>>;
 
     // The name of the job. It is super important that each job has a unique name,
@@ -117,6 +117,7 @@ impl Job for MyJob {
 
 impl Job for ErroringJob {
     type State = MyState;
+    type Error = Error;
     type Future = Ready<Result<(), Error>>;
 
     const NAME: &'static str = "ErroringJob";
@@ -126,6 +127,6 @@ impl Job for ErroringJob {
     const MAX_RETRIES: MaxRetries = MaxRetries::Count(0);
 
     fn run(self, _: MyState) -> Self::Future {
-        std::future::ready(Err(anyhow::anyhow!("boom")))
+        ready(Err(anyhow::anyhow!("boom")))
     }
 }

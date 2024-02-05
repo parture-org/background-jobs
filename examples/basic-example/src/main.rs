@@ -84,6 +84,7 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
+    type Error = Error;
     type Future = Ready<Result<(), Error>>;
     type Spawner = Spawner;
 

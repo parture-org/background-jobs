@@ -11,8 +11,8 @@ actix-rt = "2.0.0"
 anyhow = "1.0"
 background-jobs = { version = "0.17.0", path = "../..", features = [
   "error-logging",
+  "sled",
 ] }
-background-jobs-sled-storage = { version = "0.10.0", path = "../../jobs-sled" }
 time = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

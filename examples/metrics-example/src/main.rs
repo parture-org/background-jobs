@@ -89,6 +89,7 @@ impl MyJob {
 
 impl Job for MyJob {
     type State = MyState;
+    type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + 'static>>;
     type Spawner = Spawner;
 

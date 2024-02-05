@@ -6,8 +6,6 @@
 //! This crate shouldn't be depended on directly, except in the case of implementing a custom jobs
 //! processor. For a default solution based on Actix and Sled, look at the `background-jobs` crate.
 
-use anyhow::Error;
-
 mod catch_unwind;
 mod job;
 mod job_info;
@@ -28,8 +26,8 @@ pub use unsend_job::{JoinError, UnsendJob, UnsendSpawner};
 /// The error type returned by the `process` method
 pub enum JobError {
     /// Some error occurred while processing the job
-    #[error("Error performing job")]
-    Processing(#[from] Error),
+    #[error("{0}")]
+    Processing(#[from] Box<dyn std::error::Error>),
 
     /// Creating a `Job` type from the provided `serde_json::Value` failed
     #[error("Could not make JSON value from arguments")]
