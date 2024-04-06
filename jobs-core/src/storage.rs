@@ -187,7 +187,8 @@ pub mod memory_storage {
             if let Some((_, _, found_job_meta)) = inner.queue_jobs.get_mut(&queue_key) {
                 *found_job_meta = Some((runner_id, OffsetDateTime::now_utc()));
             } else {
-                metrics::counter!("background-jobs.core.heartbeat.missing-queue-job").increment(1);
+                metrics::counter!("background-jobs.memory.heartbeat.missing-queue-job")
+                    .increment(1);
                 tracing::warn!("Missing job meta for {queue_key:?}");
             }
         }
@@ -201,7 +202,7 @@ pub mod memory_storage {
             let queue_key = (job.queue.clone(), queue_time_id);
 
             if inner.queue_jobs.remove(&queue_key).is_none() {
-                metrics::counter!("background-jobs.core.remove.missing-queue-job").increment(1);
+                metrics::counter!("background-jobs.memory.remove.missing-queue-job").increment(1);
                 tracing::warn!("failed to remove job meta for {queue_key:?}");
             }
 
@@ -229,8 +230,21 @@ pub mod memory_storage {
 
             inner.queues.entry(queue).or_default().notify(1);
 
+            metrics::gauge!("background-jobs.memory.insert.queues")
+                .set(recordable(inner.queues.len()));
+            metrics::gauge!("background-jobs.memory.insert.jobs").set(recordable(inner.jobs.len()));
+            metrics::gauge!("background-jobs.memory.insert.queue-jobs")
+                .set(recordable(inner.queue_jobs.len()));
+
             id.0
         }
+    }
+
+    fn recordable(value: usize) -> u32 {
+        let value = value as u64;
+        let value = value % u64::from(u32::MAX);
+
+        value as _
     }
 
     #[async_trait::async_trait]
