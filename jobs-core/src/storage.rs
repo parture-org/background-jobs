@@ -41,7 +41,6 @@ pub mod memory_storage {
         convert::Infallible,
         future::Future,
         ops::Bound,
-        pin::Pin,
         sync::Arc,
         sync::Mutex,
         time::Duration,
@@ -107,7 +106,7 @@ pub mod memory_storage {
                 .map(|(job_info, _)| job_info.clone())
         }
 
-        fn listener(&self, pop_queue: String) -> (Pin<Box<EventListener>>, Duration) {
+        fn listener(&self, pop_queue: String) -> (EventListener, Duration) {
             let lower_bound = QueueTimeId(Uuid::new_v7(Timestamp::from_unix(NoContext, 0, 0)));
             let now = OffsetDateTime::now_utc();
 
